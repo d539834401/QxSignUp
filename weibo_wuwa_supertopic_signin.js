@@ -56,7 +56,7 @@
 
 const $ = new Env("微博超话");
 
-const SCRIPT_VERSION = "2026-09-03.r6";
+const SCRIPT_VERSION = "2026-09-03.r7";
 if (typeof $request === "undefined") $.log(`[INFO] 脚本版本 ${SCRIPT_VERSION}`);
 
 $.delete_cookie = false;
@@ -414,24 +414,28 @@ function getNextSinceId(obj) {
     return value ? String(value) : '';
 }
 
-// 只解析“我的超话”主 card_group，不递归扫描整个响应。
+// 兼容微博不同版本的 cards/card_group 包装，递归扫描卡片但排除推荐卡。
 // 微博现在会把推荐超话也放在同一响应里；推荐卡通常带“+关注/关注”按钮，必须排除。
 function extractTopics(obj) {
     const result = [];
     const seen = new Set();
-
-    const groups = getTopicGroups(obj);
-    const group = groups.find((items) => items.some((card) => isTopicCard(card) && !isFollowActionCard(card)))
-        || groups[0]
-        || [];
+    const scanned = new Set();
+    let candidateNum = 0;
+    let excludedNum = 0;
 
     function addTopic(card) {
         if (!card || typeof card !== 'object') return;
         const data = card.data && typeof card.data === 'object' ? card.data : card;
-        if (!isTopicCard(card) || isFollowActionCard(card)) return;
+        if (!isTopicCard(card)) return;
         const scheme = data.scheme || data.url || card.scheme || card.url || '';
         const fid = extractTopicId(scheme);
-        if (!fid || seen.has(fid)) return;
+        if (!fid || scanned.has(fid)) return;
+        scanned.add(fid);
+        candidateNum++;
+        if (isFollowActionCard(card)) {
+            excludedNum++;
+            return;
+        }
         const rawName = data.title_sub || data.title || data.name || card.title_sub || card.title || card.name || '';
         if (!rawName) return;
         seen.add(fid);
@@ -441,27 +445,21 @@ function extractTopics(obj) {
         });
     }
 
-    group.forEach(addTopic);
+    function walk(node) {
+        if (!node || typeof node !== 'object') return;
+        if (Array.isArray(node)) {
+            node.forEach(walk);
+            return;
+        }
+        addTopic(node);
+        Object.values(node).forEach((value) => {
+            if (value && typeof value === 'object') walk(value);
+        });
+    }
+
+    walk(obj);
+    $.log(`[列表] 超话卡片筛选: 候选 ${candidateNum} 个,排除推荐 ${excludedNum} 个,保留 ${result.length} 个`);
     return result;
-}
-
-function getTopicGroups(obj) {
-    const cardGroups = [
-        obj && obj.cards && obj.cards[0] && obj.cards[0].card_group,
-        obj && obj.data && obj.data.cards && obj.data.cards[0] && obj.data.cards[0].card_group,
-        obj && obj.cardlistInfo && obj.cardlistInfo.cards && obj.cardlistInfo.cards[0] && obj.cardlistInfo.cards[0].card_group,
-        obj && obj.data && obj.data.cardlistInfo && obj.data.cardlistInfo.cards && obj.data.cardlistInfo.cards[0] && obj.data.cardlistInfo.cards[0].card_group,
-    ];
-    const groups = cardGroups.filter(Array.isArray);
-    if (groups.length > 0) return groups;
-
-    // 少数旧版本直接把卡片放在 cards 数组中，没有 card_group 包装。
-    return [
-        obj && obj.cards,
-        obj && obj.data && obj.data.cards,
-        obj && obj.cardlistInfo && obj.cardlistInfo.cards,
-        obj && obj.data && obj.data.cardlistInfo && obj.data.cardlistInfo.cards,
-    ].filter(Array.isArray);
 }
 
 function isTopicCard(card) {
@@ -485,7 +483,12 @@ function isFollowActionCard(card) {
             collectActionLabels(source, labels);
         }
     });
-    return labels.some((label) => /^(?:(?:\+|加)?关注|去关注)$/i.test(label.trim()));
+    if (labels.some((label) => /^(?:(?:\+|加)?关注|去关注)$/i.test(label.trim()))) return true;
+    try {
+        return /(?:\+关注|加关注|去关注)/i.test(JSON.stringify(sources));
+    } catch (_) {
+        return false;
+    }
 }
 
 function collectActionLabels(source, labels) {
