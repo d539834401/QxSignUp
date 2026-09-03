@@ -1,6 +1,7 @@
 /**
  * 微博超话 · 微博 APP「超话」每日签到所有关注超话
  *
+ * 单脚本双模式：有 $request 时抓取微博 App 请求；定时运行时自动签到
  * 抓取①:打开微博 APP → 我的 → 超话社区 → 我的 → 关注,抓关注列表请求(container_timeline_topicsub)
  * 抓取②:在超话页手动签到一次,抓签到请求(page/button · X-Validator 与路径绑定,必须分开抓)
  * 签到:cron 定时自动签到
@@ -14,21 +15,21 @@
  * [MITM]
  * hostname = api.weibo.cn
  * [Script]
- * http-request ^https:\/\/api\.weibo\.cn\/2\/(statuses\/container_timeline_topicsub|page\/button) tag=微博超话 Cookie, script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_cookie.js, requires-body=true, img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png
+ * http-request ^https:\/\/api\.weibo\.cn\/2\/(statuses\/container_timeline_topicsub|page\/button) tag=微博超话 Cookie, script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js, requires-body=true, img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png
  * cron "0 8 * * *" script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js, tag=微博超话签到, img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png, enable=true
  *
  * ===== Surge =====
  * [MITM]
  * hostname = api.weibo.cn
  * [Script]
- * 微博超话 Cookie = type=http-request,pattern=^https:\/\/api\.weibo\.cn\/2\/(statuses\/container_timeline_topicsub|page\/button),requires-body=true,max-size=0,script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_cookie.js,img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png
+ * 微博超话 Cookie = type=http-request,pattern=^https:\/\/api\.weibo\.cn\/2\/(statuses\/container_timeline_topicsub|page\/button),requires-body=true,max-size=0,script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js,img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png
  * 微博超话签到 = type=cron,cronexp=0 8 * * *,timeout=60,script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js,img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png
  *
  * ===== Quantumult X =====
  * [MITM]
  * hostname = api.weibo.cn
  * [rewrite_local]
- * ^https:\/\/api\.weibo\.cn\/2\/(statuses\/container_timeline_topicsub|page\/button) url script-request-body https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_cookie.js
+ * ^https:\/\/api\.weibo\.cn\/2\/(statuses\/container_timeline_topicsub|page\/button) url script-request-body https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js
  * [task_local]
  * 0 8 * * * https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js, tag=微博超话签到, img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png, enabled=true
  *
@@ -55,7 +56,7 @@
 const $ = new Env("微博超话");
 
 const SCRIPT_VERSION = "2026-05-11.r1"; // 改一次 +1,确认拉到最新版
-$.log(`[INFO] 脚本版本 ${SCRIPT_VERSION}`);
+if (typeof $request === "undefined") $.log(`[INFO] 脚本版本 ${SCRIPT_VERSION}`);
 
 $.delete_cookie = false;
 $.msg_max_num = 30;
@@ -68,7 +69,13 @@ const KEY_LIST_BODY = 'evil_tokenbody';
 const KEY_CHECKIN_URL = 'evil_tokencheckinurl';
 const KEY_CHECKIN_HEADERS = 'evil_tokencheckinheaders';
 
-(async () => {
+if (typeof $request !== "undefined") {
+    captureRequest();
+} else {
+    runTask();
+}
+
+async function runTask() {
     if (!loadSettings()) return;
     if (!loadCookies()) return;
 
@@ -114,10 +121,75 @@ const KEY_CHECKIN_HEADERS = 'evil_tokencheckinheaders';
     }
 
     sendSummary();
-})()
-.catch((e) => $.log(`❌ ${e.message || e}`))
-.finally(() => $.done());
+}
 
+
+
+function captureRequest() {
+    if (!$request) {
+        $.log('[ERROR] 该脚本仅作为 http-request 重写脚本运行');
+        $.done();
+        return;
+    }
+    if ($request.method === 'OPTIONS') {
+        $.done();
+        return;
+    }
+
+    const url = $request.url;
+
+    // 抓取 1: 关注超话列表
+    if (/\/2\/statuses\/container_timeline_topicsub/.test(url)) {
+        try {
+            const headers = $request.headers;
+            let body = $request.body || '';
+            if (!body || body.length < 10) {
+                body = 'filterGroupStyle=1&flowId=232478_-_mine_topic&flowVersion=0.0.1&lfid=profile_me&luicode=10000011&mix_media_enable=1&moduleID=pagecard&orifid=profile_me&oriuicode=10000011&pageDataType=flow&sg_tab_config=2&source_code=10000011_profile_me&taskType=refresh&uicode=10001387';
+                $.log('[INFO] 未抓到 body,使用兜底默认值');
+            }
+            $.setdata(url, KEY_LIST_URL);
+            $.setdata(JSON.stringify(headers), KEY_LIST_HEADERS);
+            $.setdata(body, KEY_LIST_BODY);
+            $.log(`[INFO] 列表 cookie: url=${url.length}字符 headers=${Object.keys(headers).length}个 body=${body.length}字符`);
+
+            const checkinExists = !!$.getdata(KEY_CHECKIN_URL);
+            const subtitle = '✅ 已获取关注列表 Cookie';
+            const body_msg = checkinExists
+                ? '✨ 列表 + 签到 cookie 都已就绪,可关闭本脚本'
+                : '🔍 接下来请进一个超话手动签到一次,以获取签到 cookie';
+            $.msg('微博超话', subtitle, body_msg);
+        } catch (e) {
+            $.log('[ERROR] 列表 cookie 抓取失败: ' + e);
+        }
+        $.done();
+        return;
+    }
+
+    // 抓取 2: 签到接口 (放宽: 只要 page/button 路径就尝试存,签到/已签都能命中)
+    // 这样 active_checkin / 已签状态查询 等任何 button 接口都能用
+    if (/\/2\/page\/button/.test(url)) {
+        try {
+            const headers = $request.headers;
+            $.setdata(url, KEY_CHECKIN_URL);
+            $.setdata(JSON.stringify(headers), KEY_CHECKIN_HEADERS);
+            $.log(`[INFO] 签到 cookie: url=${url.length}字符 headers=${Object.keys(headers).length}个`);
+            $.log(`[INFO] 签到 url 含 active_checkin: ${/active_checkin/.test(url)}`);
+
+            const listExists = !!$.getdata(KEY_LIST_URL);
+            const subtitle = '🎉 已获取签到 Cookie';
+            const body_msg = listExists
+                ? '✨ 列表 + 签到 cookie 都已就绪,请关闭本脚本'
+                : '⚠️ 还需要进关注列表页抓取列表 cookie';
+            $.msg('微博超话', subtitle, body_msg);
+        } catch (e) {
+            $.log('[ERROR] 签到 cookie 抓取失败: ' + e);
+        }
+        $.done();
+        return;
+    }
+
+    $.done();
+}
 
 function loadSettings() {
     $.delete_cookie = JSON.parse($.getdata('wb_delete_cookie') || $.delete_cookie);
