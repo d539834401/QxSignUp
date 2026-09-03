@@ -56,7 +56,7 @@
 
 const $ = new Env("微博超话");
 
-const SCRIPT_VERSION = "2026-09-03.r3";
+const SCRIPT_VERSION = "2026-09-03.r4";
 if (typeof $request === "undefined") $.log(`[INFO] 脚本版本 ${SCRIPT_VERSION}`);
 
 $.delete_cookie = false;
@@ -464,7 +464,9 @@ function replaceParam(value, name, nextValue) {
     return source + separator + `${encodedName}=${encodeURIComponent(nextValue)}`;
 }
 
-// 签到: 用签到 cookie,只替换 fid 和 pageid
+// 签到: 用签到 cookie,只替换纯 fid 和 pageid。
+// 注意：不要带 _-_recommend；该后缀是微博推荐/关注来源标记，
+// 复用到定时请求可能触发“关注后签到”。
 function checkin(fid, name) {
     return new Promise((resolve) => {
         const request = buildCheckinRequest(fid);
@@ -527,12 +529,13 @@ function checkin(fid, name) {
 
 function buildCheckinRequest(fid) {
     const method = String($.checkinMethod || inferMethod($.checkinUrl, 'GET')).toUpperCase();
-    let url = replaceTopicParam($.checkinUrl, 'fid', `${fid}_-_recommend`);
-    url = replacePageId(url, fid);
+    const plainFid = String(fid || '').replace(/_-_recommend$/i, '');
+    let url = replaceTopicParam($.checkinUrl, 'fid', plainFid);
+    url = replacePageId(url, plainFid);
     let body = String($.checkinBody || '');
     if (body) {
-        body = replaceTopicParam(body, 'fid', `${fid}_-_recommend`);
-        body = replacePageId(body, fid);
+        body = replaceTopicParam(body, 'fid', plainFid);
+        body = replacePageId(body, plainFid);
     }
     return { url, body, method };
 }
