@@ -56,7 +56,7 @@
 
 const $ = new Env("微博超话");
 
-const SCRIPT_VERSION = "2026-09-03.r5";
+const SCRIPT_VERSION = "2026-09-03.r6";
 if (typeof $request === "undefined") $.log(`[INFO] 脚本版本 ${SCRIPT_VERSION}`);
 
 $.delete_cookie = false;
@@ -414,18 +414,25 @@ function getNextSinceId(obj) {
     return value ? String(value) : '';
 }
 
-// 递归找 card_type=8 的超话卡片，兼容 card_type 为数字或字符串、以及 data 包装层。
+// 只解析“我的超话”主 card_group，不递归扫描整个响应。
+// 微博现在会把推荐超话也放在同一响应里；推荐卡通常带“+关注/关注”按钮，必须排除。
 function extractTopics(obj) {
     const result = [];
     const seen = new Set();
 
+    const groups = getTopicGroups(obj);
+    const group = groups.find((items) => items.some((card) => isTopicCard(card) && !isFollowActionCard(card)))
+        || groups[0]
+        || [];
+
     function addTopic(card) {
         if (!card || typeof card !== 'object') return;
-        if (String(card.card_type) !== '8') return;
-        const scheme = card.scheme || card.url || '';
+        const data = card.data && typeof card.data === 'object' ? card.data : card;
+        if (!isTopicCard(card) || isFollowActionCard(card)) return;
+        const scheme = data.scheme || data.url || card.scheme || card.url || '';
         const fid = extractTopicId(scheme);
         if (!fid || seen.has(fid)) return;
-        const rawName = card.title_sub || card.title || card.name || '';
+        const rawName = data.title_sub || data.title || data.name || card.title_sub || card.title || card.name || '';
         if (!rawName) return;
         seen.add(fid);
         result.push({
@@ -434,15 +441,58 @@ function extractTopics(obj) {
         });
     }
 
-    function walk(node) {
-        if (!node || typeof node !== 'object') return;
-        if (Array.isArray(node)) { node.forEach(walk); return; }
-        addTopic(node);
-        addTopic(node.data);
-        Object.values(node).forEach(v => { if (v && typeof v === 'object') walk(v); });
-    }
-    walk(obj);
+    group.forEach(addTopic);
     return result;
+}
+
+function getTopicGroups(obj) {
+    const cardGroups = [
+        obj && obj.cards && obj.cards[0] && obj.cards[0].card_group,
+        obj && obj.data && obj.data.cards && obj.data.cards[0] && obj.data.cards[0].card_group,
+        obj && obj.cardlistInfo && obj.cardlistInfo.cards && obj.cardlistInfo.cards[0] && obj.cardlistInfo.cards[0].card_group,
+        obj && obj.data && obj.data.cardlistInfo && obj.data.cardlistInfo.cards && obj.data.cardlistInfo.cards[0] && obj.data.cardlistInfo.cards[0].card_group,
+    ];
+    const groups = cardGroups.filter(Array.isArray);
+    if (groups.length > 0) return groups;
+
+    // 少数旧版本直接把卡片放在 cards 数组中，没有 card_group 包装。
+    return [
+        obj && obj.cards,
+        obj && obj.data && obj.data.cards,
+        obj && obj.cardlistInfo && obj.cardlistInfo.cards,
+        obj && obj.data && obj.data.cardlistInfo && obj.data.cardlistInfo.cards,
+    ].filter(Array.isArray);
+}
+
+function isTopicCard(card) {
+    if (!card || typeof card !== 'object') return false;
+    const data = card.data && typeof card.data === 'object' ? card.data : card;
+    return String(data.card_type || card.card_type) === '8' && !!(data.scheme || data.url || card.scheme || card.url);
+}
+
+function isFollowActionCard(card) {
+    if (!card || typeof card !== 'object') return false;
+    const data = card.data && typeof card.data === 'object' ? card.data : card;
+    const labels = [];
+    const sources = [
+        card.button, data.button, card.ext_button, data.ext_button,
+        card.buttons, data.buttons, card.action, data.action,
+    ];
+    sources.forEach((source) => {
+        if (Array.isArray(source)) {
+            source.forEach((item) => collectActionLabels(item, labels));
+        } else {
+            collectActionLabels(source, labels);
+        }
+    });
+    return labels.some((label) => /^(?:(?:\+|加)?关注|去关注)$/i.test(label.trim()));
+}
+
+function collectActionLabels(source, labels) {
+    if (!source || typeof source !== 'object') return;
+    ['name', 'title', 'text', 'label', 'caption'].forEach((key) => {
+        if (source[key] !== undefined && source[key] !== null) labels.push(String(source[key]));
+    });
 }
 
 function extractTopicId(value) {
