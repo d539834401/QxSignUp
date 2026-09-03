@@ -29,7 +29,7 @@
  * hostname = api.weibo.cn, mapi.weibo.com
  * [rewrite_local]
  * ^https?:\/\/m?api\.weibo\.c(n|om)\/2\/statuses\/container_timeline_topic(?:sub|page)(?:[\/?].*)?$ url script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js
- * ^https?:\/\/m?api\.weibo\.c(n|om)\/2\/cardlist.*(?:myfollow|followsuper|need(?:_|%5f)head(?:_|%5f)cards|super(?:topic)?) url script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js
+ * ^https?:\/\/m?api\.weibo\.c(n|om)\/2\/cardlist url script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js
  * ^https?:\/\/m?api\.weibo\.c(n|om)\/2\/page\/button.*active(?:_|%5f)checkin url script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js
  * [task_local]
  * 0 8 * * * https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js, tag=微博超话签到, img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png, enabled=true
@@ -56,7 +56,7 @@
 
 const $ = new Env("微博超话");
 
-const SCRIPT_VERSION = "2026-09-03.r4";
+const SCRIPT_VERSION = "2026-09-03.r5";
 if (typeof $request === "undefined") $.log(`[INFO] 脚本版本 ${SCRIPT_VERSION}`);
 
 $.delete_cookie = false;
