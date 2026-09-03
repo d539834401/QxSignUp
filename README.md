@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | 库街区鸣潮游戏签到 | [`kurobbs_wuwa_signin.js`](./kurobbs_wuwa_signin.js) | [`kurobbs_wuwa_signin.conf`](./kurobbs_wuwa_signin.conf) |
 | TapTap鸣潮活动签到及礼包领取 | [`taptap_wuwa_signin.js`](./taptap_wuwa_signin.js) | [`taptap_wuwa_signin.conf`](./taptap_wuwa_signin.conf) |
-| 微博 App 超话签到（含鸣潮） | [`weibo_wuwa_supertopic_signin.js`](./weibo_wuwa_supertopic_signin.js)（抓取/签到双模式） | [`weibo_wuwa_supertopic_signin.conf`](./weibo_wuwa_supertopic_signin.conf) |
+| 微博 App 超话签到（含鸣潮） | [`weibo_wuwa_supertopic_signin.js`](./weibo_wuwa_supertopic_signin.js)（兼容新旧接口） | [`weibo_wuwa_supertopic_signin.conf`](./weibo_wuwa_supertopic_signin.conf) |
 
 ## 通用安装方法
 
@@ -40,12 +40,16 @@ Token失效时，重新进入库街区 App 的鸣潮签到页即可刷新本地�
 
 ## 微博 App 超话签到（含鸣潮）
 
-本版本改为单脚本双模式：收到微博 App 请求时负责抓取，定时运行时负责签到。它会自动签到账号已关注的所有超话（包括鸣潮），不再依赖 Safari 的微博网页版 Cookie。由于微博接口使用 X-Validator 路径绑定，需要分别获取“关注列表”和“签到”两组请求信息。QX 对关注列表使用 body 重写，对签到按钮使用 header 重写，以兼容无请求体的签到请求。
+本版本按近期微博 App 接口调整为双请求抓取模式：`weibo_wuwa_supertopic_signin.js` 负责抓取兼签到。它会自动签到账号已关注的所有超话（包括鸣潮），不依赖 Safari 的微博网页版 Cookie。由于微博接口使用 X-Validator 路径绑定，需要分别获取“关注列表”和“签到”两组请求信息。脚本同时兼容 `container_timeline_topicpage`、`container_timeline_topicsub` 和旧接口 `cardlist`。
 
 1. 保持 Quantumult X 接管网络，合并 [`weibo_wuwa_supertopic_signin.conf`](./weibo_wuwa_supertopic_signin.conf)，安装并信任 MitM 证书。
-2. 临时开启重写后，在微博 App 进入“我的 → 超话社区 → 我的 → 关注”，等待“已获取关注列表 Cookie”通知。
-3. 进入任意超话并手动签到一次，等待“已获取签到 Cookie”通知。
-4. 抓取完成后关闭重写规则，保留同一个脚本的定时任务；手动运行一次“微博·超话签到”测试，之后每天 08:00 自动执行。
+2. 临时开启重写后，在微博 App 进入“我的 → 超话社区 → 我的 → 关注”，等待“已捕获关注列表请求”通知。
+3. 进入任意超话并手动签到一次，等待“已捕获超话签到请求”通知。若之前所有超话都已签到，可先关注一个新超话再手动签到。
+4. 抓取完成后关闭重写规则，保留定时任务；手动运行一次“微博·超话签到”测试，之后每天 08:00 自动执行。
+
+当前微博版本的关注列表请求体在 QX 中可能出现 `Failed to decode body`，因此配置对 `container_timeline_topicpage/topicsub` 使用 `script-request-header`，不依赖请求体解码；脚本会使用 URL、headers 和兼容默认参数保存列表请求。本次配置先恢复使用远程 Raw；如果 QX 仍没有执行请求重写，再将脚本下载到 `iCloud Drive/Quantumult X/Scripts/` 或“我的 iPhone/Quantumult X/Scripts/”，并把规则末尾改成本地文件名。
+
+如果仍然没有第一条通知，说明微博请求没有命中规则：请确认 MitM 中包含 `api.weibo.cn` 和 `mapi.weibo.com`，并检查微博请求是否经过 Quantumult X。若出现“已捕获关注列表请求”但没有第二条，必须在重写保持开启时真正点击超话页的“签到”按钮，而不是只打开超话页面。
 
 如果抓取失败或 X-Validator 过期，清空 QX 本地持久化数据后重新完成以上两次抓取。关注超话较多时应降低执行频率，避免触发风控。
 

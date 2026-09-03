@@ -1,35 +1,35 @@
 /**
  * 微博超话 · 微博 APP「超话」每日签到所有关注超话
  *
- * 单脚本双模式：有 $request 时抓取微博 App 请求；定时运行时自动签到
- * 抓取①:打开微博 APP → 我的 → 超话社区 → 我的 → 关注,抓关注列表请求(container_timeline_topicsub)
- * 抓取②:在超话页手动签到一次,抓签到请求(page/button · X-Validator 与路径绑定,必须分开抓)
- * 签到:cron 定时自动签到
+ * 双模式脚本：请求重写时抓取微博 App 请求；定时运行时自动签到。
+ * 抓取①:打开微博 APP → 我的 → 超话社区 → 我的 → 关注
+ * 抓取②:在超话页手动签到一次
  *
  * @Author: @Evilbutcher (https://github.com/evilbutcher) / @toulanboy (https://github.com/toulanboy/scripts)
  * @Modifier: MaYIHEI <https://github.com/MaYIHEI/paperclip>
  * @Channel: Telegram 频道 https://t.me/mayihei
- * @Updated: 2026-05-11
+ * @Updated: 2026-09-03
  *
  * ===== Loon =====
  * [MITM]
  * hostname = api.weibo.cn
  * [Script]
- * http-request ^https:\/\/api\.weibo\.cn\/2\/(statuses\/container_timeline_topicsub|page\/button) tag=微博超话 Cookie, script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js, requires-body=true, img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png
+ * http-request ^https:\/\/api\.weibo\.cn\/2\/(statuses\/container_timeline_topicsub|cardlist|page\/button) tag=微博超话 Cookie, script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js, requires-body=true, img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png
  * cron "0 8 * * *" script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js, tag=微博超话签到, img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png, enable=true
  *
  * ===== Surge =====
  * [MITM]
  * hostname = api.weibo.cn
  * [Script]
- * 微博超话 Cookie = type=http-request,pattern=^https:\/\/api\.weibo\.cn\/2\/(statuses\/container_timeline_topicsub|page\/button),requires-body=true,max-size=0,script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js,img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png
+ * 微博超话 Cookie = type=http-request,pattern=^https:\/\/api\.weibo\.cn\/2\/(statuses\/container_timeline_topicsub|cardlist|page\/button),requires-body=true,max-size=0,script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js,img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png
  * 微博超话签到 = type=cron,cronexp=0 8 * * *,timeout=60,script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js,img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png
  *
  * ===== Quantumult X =====
  * [MITM]
  * hostname = api.weibo.cn, mapi.weibo.com
  * [rewrite_local]
- * ^https?:\/\/m?api\.weibo\.c(n|om)\/2\/statuses\/container_timeline_topicsub url script-request-body https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js
+ * ^https?:\/\/m?api\.weibo\.c(n|om)\/2\/statuses\/container_timeline_topic(?:sub|page) url script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js
+ * ^https?:\/\/m?api\.weibo\.c(n|om)\/2\/cardlist url script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js
  * ^https?:\/\/m?api\.weibo\.c(n|om)\/2\/page\/button url script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js
  * [task_local]
  * 0 8 * * * https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js, tag=微博超话签到, img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png, enabled=true
@@ -56,7 +56,7 @@
 
 const $ = new Env("微博超话");
 
-const SCRIPT_VERSION = "2026-05-11.r1"; // 改一次 +1,确认拉到最新版
+const SCRIPT_VERSION = "2026-09-03.r2";
 if (typeof $request === "undefined") $.log(`[INFO] 脚本版本 ${SCRIPT_VERSION}`);
 
 $.delete_cookie = false;
@@ -67,13 +67,23 @@ $.debug = false;
 const KEY_LIST_URL = 'evil_tokenurl';
 const KEY_LIST_HEADERS = 'evil_tokenheaders';
 const KEY_LIST_BODY = 'evil_tokenbody';
+const KEY_LIST_METHOD = 'evil_tokenmethod';
 const KEY_CHECKIN_URL = 'evil_tokencheckinurl';
 const KEY_CHECKIN_HEADERS = 'evil_tokencheckinheaders';
+const KEY_CHECKIN_BODY = 'evil_tokencheckinbody';
+const KEY_CHECKIN_METHOD = 'evil_tokencheckinmethod';
 
-if (typeof $request !== "undefined") {
+if (isRequestMode()) {
+    // 保留旧版单脚本配置的兼容性；新配置请使用 cookie.js。
     captureRequest();
 } else {
-    runTask();
+    runTask()
+        .catch((e) => $.log(`❌ 执行失败: ${e.message || e}`))
+        .finally(() => $.done());
+}
+
+function isRequestMode() {
+    return typeof $request !== 'undefined' && $request && typeof $request.url === 'string' && $request.url.length > 0;
 }
 
 async function runTask() {
@@ -128,62 +138,81 @@ async function runTask() {
 
 function captureRequest() {
     if (!$request) {
-        $.log('[ERROR] 该脚本仅作为 http-request 重写脚本运行');
+        $.log('[ERROR] 该脚本仅作为请求重写脚本运行');
         $.done();
         return;
     }
-    if ($request.method === 'OPTIONS') {
+    const method = String($request.method || '').toUpperCase();
+    if (method === 'OPTIONS') {
         $.done();
         return;
     }
 
-    const url = $request.url;
+    const url = String($request.url || '');
+    const decodedUrl = decodeUrl(url);
 
-    // 抓取 1: 关注超话列表
-    if (/\/2\/statuses\/container_timeline_topicsub/.test(url)) {
+    // 兼容新旧微博 APP：新版本使用 topicsub，旧版本仍使用 cardlist。
+    if (isNewListRequest(url) || isLegacyListRequest(decodedUrl)) {
         try {
             const headers = $request.headers;
-            let body = $request.body || '';
+            let body = String($request.body || '');
             if (!body || body.length < 10) {
-                body = 'filterGroupStyle=1&flowId=232478_-_mine_topic&flowVersion=0.0.1&lfid=profile_me&luicode=10000011&mix_media_enable=1&moduleID=pagecard&orifid=profile_me&oriuicode=10000011&pageDataType=flow&sg_tab_config=2&source_code=10000011_profile_me&taskType=refresh&uicode=10001387';
-                $.log('[INFO] 未抓到 body,使用兜底默认值');
+                body = defaultListBody();
+                $.log('[INFO] 列表请求没有 body，使用兼容默认参数');
             }
-            $.setdata(url, KEY_LIST_URL);
-            $.setdata(JSON.stringify(headers), KEY_LIST_HEADERS);
-            $.setdata(body, KEY_LIST_BODY);
-            $.log(`[INFO] 列表 cookie: url=${url.length}字符 headers=${Object.keys(headers).length}个 body=${body.length}字符`);
+
+            const oldUrl = $.getdata(KEY_LIST_URL) || '';
+            const initial = !hasPageCursor(url, body) || /taskType=refresh/i.test(body);
+            if (!oldUrl || initial) {
+                saveData(KEY_LIST_URL, url);
+                saveData(KEY_LIST_HEADERS, JSON.stringify(headers || {}));
+                saveData(KEY_LIST_BODY, body);
+                saveData(KEY_LIST_METHOD, method || 'POST');
+                $.log(`[INFO] 已保存列表请求: ${method || 'UNKNOWN'} url=${url.length} body=${body.length}`);
+            } else {
+                $.log('[INFO] 忽略列表翻页请求，保留第一页请求模板');
+            }
 
             const checkinExists = !!$.getdata(KEY_CHECKIN_URL);
-            const subtitle = '✅ 已获取关注列表 Cookie';
-            const body_msg = checkinExists
-                ? '✨ 列表 + 签到 cookie 都已就绪,可关闭本脚本'
-                : '🔍 接下来请进一个超话手动签到一次,以获取签到 cookie';
-            $.msg('微博超话', subtitle, body_msg);
+            $.msg(
+                '微博超话',
+                '✅ 已捕获关注列表请求',
+                checkinExists
+                    ? '✨ 列表 + 签到请求都已就绪，可以关闭重写'
+                    : '🔍 接下来进入任意超话，手动签到一次'
+            );
         } catch (e) {
-            $.log('[ERROR] 列表 cookie 抓取失败: ' + e);
+            $.log('[ERROR] 列表请求保存失败: ' + (e.message || e));
+            $.msg('微博超话', '🚫 列表请求保存失败', String(e.message || e));
         }
         $.done();
         return;
     }
 
-    // 抓取 2: 签到接口 (放宽: 只要 page/button 路径就尝试存,签到/已签都能命中)
-    // 这样 active_checkin / 已签状态查询 等任何 button 接口都能用
-    if (/\/2\/page\/button/.test(url)) {
+    // 只保存真正的 active_checkin 请求，避免其它 page/button 请求覆盖签到模板。
+    if (isCheckinRequest(url, decodedUrl)) {
         try {
-            const headers = $request.headers;
-            $.setdata(url, KEY_CHECKIN_URL);
-            $.setdata(JSON.stringify(headers), KEY_CHECKIN_HEADERS);
-            $.log(`[INFO] 签到 cookie: url=${url.length}字符 headers=${Object.keys(headers).length}个`);
-            $.log(`[INFO] 签到 url 含 active_checkin: ${/active_checkin/.test(url)}`);
+            const headers = $request.headers || {};
+            const headerText = Object.keys(headers).join(',');
+            const hasValidator = /(?:^|,)(?:x-validator|x[_-]validator)(?:,|$)/i.test(headerText);
+            saveData(KEY_CHECKIN_URL, url);
+            saveData(KEY_CHECKIN_HEADERS, JSON.stringify(headers));
+            saveData(KEY_CHECKIN_BODY, String($request.body || ''));
+            saveData(KEY_CHECKIN_METHOD, method || 'GET');
+            $.log(`[INFO] 已保存签到请求: ${method || 'UNKNOWN'} url=${url.length} X-Validator=${hasValidator ? '有' : '无'}`);
 
             const listExists = !!$.getdata(KEY_LIST_URL);
-            const subtitle = '🎉 已获取签到 Cookie';
-            const body_msg = listExists
-                ? '✨ 列表 + 签到 cookie 都已就绪,请关闭本脚本'
-                : '⚠️ 还需要进关注列表页抓取列表 cookie';
-            $.msg('微博超话', subtitle, body_msg);
+            const hint = hasValidator ? '' : '\n⚠️ 本次请求未见 X-Validator，若签到失败请在重写开启时重新手动签到。';
+            $.msg(
+                '微博超话',
+                '🎉 已捕获超话签到请求',
+                (listExists
+                    ? '✨ 列表 + 签到请求都已就绪，可以关闭重写'
+                    : '⚠️ 还需要先进入“我的 → 超话社区 → 我的 → 关注”') + hint
+            );
         } catch (e) {
-            $.log('[ERROR] 签到 cookie 抓取失败: ' + e);
+            $.log('[ERROR] 签到请求保存失败: ' + (e.message || e));
+            $.msg('微博超话', '🚫 签到请求保存失败', String(e.message || e));
         }
         $.done();
         return;
@@ -192,13 +221,55 @@ function captureRequest() {
     $.done();
 }
 
+function isNewListRequest(url) {
+    return /\/2\/statuses\/container_timeline_topic(?:sub|page)(?:[/?]|$)/i.test(url);
+}
+
+function isLegacyListRequest(url) {
+    if (!/\/2\/cardlist(?:[/?]|$)/i.test(url)) return false;
+    return /(?:myfollow|followsuper|need[_-]head[_-]cards|super(?:topic)?)/i.test(url);
+}
+
+function isCheckinRequest(url, decodedUrl) {
+    if (!/\/2\/page\/button(?:[/?]|$)/i.test(url)) return false;
+    return /active[_-]checkin/i.test(url) || /active[_-]checkin/i.test(decodedUrl);
+}
+
+function hasPageCursor(url, body) {
+    return /(?:[?&]|%26)since_id(?:=|%3D)/i.test(url) || /(?:^|&)since_id=/i.test(body);
+}
+
+function defaultListBody() {
+    return 'filterGroupStyle=1&flowId=232478_-_mine_topic&flowVersion=0.0.1&lfid=profile_me&luicode=10000011&mix_media_enable=1&moduleID=pagecard&orifid=profile_me&oriuicode=10000011&pageDataType=flow&sg_tab_config=2&source_code=10000011_profile_me&taskType=refresh&uicode=10001387';
+}
+
+function saveData(key, value) {
+    if (!$.setdata(String(value), key)) $.log(`[WARN] 本地数据写入失败: ${key}`);
+}
+
+function decodeUrl(value) {
+    let result = String(value || '');
+    for (let i = 0; i < 2; i++) {
+        try {
+            const next = decodeURIComponent(result);
+            if (next === result) break;
+            result = next;
+        } catch (_) {
+            break;
+        }
+    }
+    return result;
+}
+
 function loadSettings() {
-    $.delete_cookie = JSON.parse($.getdata('wb_delete_cookie') || $.delete_cookie);
+    const deleteValue = $.getdata('wb_delete_cookie');
+    $.delete_cookie = deleteValue === true || deleteValue === 'true' || deleteValue === '1';
     $.msg_max_num = parseInt($.getdata('wb_msg_max_num')) || $.msg_max_num;
     $.req_interval = parseInt($.getdata('wb_request_time')) || $.req_interval;
 
     if ($.delete_cookie) {
-        [KEY_LIST_URL, KEY_LIST_HEADERS, KEY_LIST_BODY, KEY_CHECKIN_URL, KEY_CHECKIN_HEADERS]
+        [KEY_LIST_URL, KEY_LIST_HEADERS, KEY_LIST_BODY, KEY_LIST_METHOD,
+            KEY_CHECKIN_URL, KEY_CHECKIN_HEADERS, KEY_CHECKIN_BODY, KEY_CHECKIN_METHOD]
             .forEach(k => $.setdata('', k));
         $.setdata('false', 'wb_delete_cookie');
         $.msg($.name, '', '✅ Cookie 已清空,请重新抓取');
@@ -211,8 +282,11 @@ function loadCookies() {
     $.listUrl = $.getdata(KEY_LIST_URL);
     $.listHeadersStr = $.getdata(KEY_LIST_HEADERS);
     $.listBody = $.getdata(KEY_LIST_BODY) || '';
+    $.listMethod = $.getdata(KEY_LIST_METHOD) || '';
     $.checkinUrl = $.getdata(KEY_CHECKIN_URL);
     $.checkinHeadersStr = $.getdata(KEY_CHECKIN_HEADERS);
+    $.checkinBody = $.getdata(KEY_CHECKIN_BODY) || '';
+    $.checkinMethod = $.getdata(KEY_CHECKIN_METHOD) || '';
 
     const missing = [];
     if (!$.listUrl || !$.listHeadersStr) missing.push('列表 cookie');
@@ -230,6 +304,8 @@ function loadCookies() {
     try {
         $.listHeaders = JSON.parse($.listHeadersStr);
         $.checkinHeaders = JSON.parse($.checkinHeadersStr);
+        $.listMethod = String($.listMethod || inferMethod($.listUrl, 'POST')).toUpperCase();
+        $.checkinMethod = String($.checkinMethod || inferMethod($.checkinUrl, 'GET')).toUpperCase();
         return true;
     } catch (e) {
         $.msg('微博超话', '🚫 Cookie 解析失败', '请清空 cookie 后重新抓取');
@@ -247,45 +323,45 @@ function initState() {
 
 function fetchTopicPage(sinceId) {
     return new Promise((resolve) => {
-        let body = $.listBody;
-        if (sinceId) {
-            body = body.replace(/&?since_id=[^&]*/g, '');
-            body += (body ? '&' : '') + `since_id=${encodeURIComponent(sinceId)}`;
-        }
+        const method = $.listMethod === 'GET' ? 'GET' : 'POST';
+        const body = sinceId ? replaceParam($.listBody, 'since_id', sinceId) : $.listBody;
+        const requestUrl = sinceId ? replaceParam($.listUrl, 'since_id', sinceId) : $.listUrl;
         const cleanedHeaders = cleanHeaders($.listHeaders);
-        const opts = { url: $.listUrl, headers: cleanedHeaders, body: body };
+        const opts = { url: requestUrl, headers: cleanedHeaders };
+        if (method !== 'GET') opts.body = body;
 
-        $.log(`[列表] URL长度=${$.listUrl.length} headers=${Object.keys(cleanedHeaders).length}个 body长度=${body.length}`);
+        $.log(`[列表] ${method} URL长度=${requestUrl.length} headers=${Object.keys(cleanedHeaders).length}个 body长度=${String(body || '').length}`);
         if ($.debug) {
             $.log(`[列表] headers: ${JSON.stringify(cleanedHeaders)}`);
-            $.log(`[列表] body: ${body}`);
+            $.log(`[列表] body: ${String(body || '')}`);
         }
 
-        $.post(opts, (err, resp, data) => {
+        sendRequest(opts, method, (err, resp, data) => {
             if (err) {
                 $.log(`[列表] 请求错误: ${JSON.stringify(err)}`);
                 resolve(null);
                 return;
             }
-            if (resp && resp.statusCode !== 200) {
-                $.log(`[列表] HTTP ${resp.statusCode}: ${(data || '').substring(0, 200)}`);
+            const statusCode = getStatusCode(resp);
+            if (statusCode && statusCode !== 200) {
+                $.log(`[列表] HTTP ${statusCode}: ${(data || '').substring(0, 200)}`);
                 resolve(null);
                 return;
             }
             try {
-                const obj = JSON.parse(data);
-                if (obj.errmsg || obj.errno) {
-                    const em = obj.errmsg || `errno: ${obj.errno}`;
+                const obj = typeof data === 'string' ? JSON.parse(data) : data;
+                const em = getResponseError(obj);
+                if (em) {
                     $.log(`[列表] 微博错误: ${em}`);
-                    let hint = '\n\n🔍 风控签名(X-Validator)可能已过期。\n请重新抓 cookie:\n1️⃣ 进 我的→超话社区→我的→关注\n2️⃣ 进任一超话签到一次';
+                    const hint = '\n\n🔍 风控签名(X-Validator)可能已过期。\n请重新抓 cookie:\n1️⃣ 进 我的→超话社区→我的→关注\n2️⃣ 进任一超话签到一次';
                     $.msg('微博超话', '🚨 拉取关注列表失败', `${em}${hint}`);
                     resolve(null);
                     return;
                 }
                 const list = extractTopics(obj);
                 $.log(`[列表] 解析到 ${list.length} 个超话`);
-                const nextSinceId = (obj.moreInfo && obj.moreInfo.params && obj.moreInfo.params.since_id) || '';
-                resolve({ list, nextSinceId: (nextSinceId === '-1_1' || !nextSinceId) ? '' : nextSinceId });
+                const nextSinceId = getNextSinceId(obj);
+                resolve({ list, nextSinceId: nextSinceId === '-1_1' ? '' : nextSinceId });
             } catch (e) {
                 $.log(`[列表] 解析失败: ${e}`);
                 $.log(`[列表] 响应前500: ${(data || '').substring(0, 500)}`);
@@ -295,67 +371,128 @@ function fetchTopicPage(sinceId) {
     });
 }
 
-// 递归找 card_type:8 的超话卡片
+function sendRequest(opts, method, callback) {
+    if (method === 'GET') $.get(opts, callback);
+    else $.post(opts, callback);
+}
+
+function getStatusCode(resp) {
+    if (!resp) return 0;
+    return Number(resp.statusCode || resp.status || 0);
+}
+
+function getResponseError(obj) {
+    if (!obj || typeof obj !== 'object') return '响应不是 JSON 对象';
+    if (obj.errmsg) return String(obj.errmsg);
+    if (obj.error_msg) return String(obj.error_msg);
+    if (obj.error) return String(obj.error);
+    if (obj.errno && String(obj.errno) !== '0') return `errno: ${obj.errno}`;
+    if (obj.errcode && String(obj.errcode) !== '0') return `errcode: ${obj.errcode}`;
+    if (obj.ok === 0 || obj.result === 0) return String(obj.msg || '微博返回失败');
+    return '';
+}
+
+function getNextSinceId(obj) {
+    const candidates = [
+        obj && obj.moreInfo && obj.moreInfo.params && obj.moreInfo.params.since_id,
+        obj && obj.data && obj.data.moreInfo && obj.data.moreInfo.params && obj.data.moreInfo.params.since_id,
+        obj && obj.cardlistInfo && obj.cardlistInfo.since_id,
+        obj && obj.data && obj.data.cardlistInfo && obj.data.cardlistInfo.since_id,
+    ];
+    const value = candidates.find((item) => item !== undefined && item !== null && item !== '');
+    return value ? String(value) : '';
+}
+
+// 递归找 card_type=8 的超话卡片，兼容 card_type 为数字或字符串、以及 data 包装层。
 function extractTopics(obj) {
     const result = [];
+    const seen = new Set();
+
+    function addTopic(card) {
+        if (!card || typeof card !== 'object') return;
+        if (String(card.card_type) !== '8') return;
+        const scheme = card.scheme || card.url || '';
+        const fid = extractTopicId(scheme);
+        if (!fid || seen.has(fid)) return;
+        const rawName = card.title_sub || card.title || card.name || '';
+        if (!rawName) return;
+        seen.add(fid);
+        result.push({
+            fid,
+            name: String(rawName).replace(/超话$/, ''),
+        });
+    }
+
     function walk(node) {
         if (!node || typeof node !== 'object') return;
         if (Array.isArray(node)) { node.forEach(walk); return; }
-        const data = node.data;
-        if (data && data.card_type === 8 && data.scheme && data.title_sub) {
-            const m = data.scheme.match(/containerid=(1008\d{2}[a-f0-9]{32})/);
-            if (m) {
-                result.push({
-                    fid: m[1],
-                    name: String(data.title_sub).replace(/超话$/, ''),
-                });
-            }
-        }
+        addTopic(node);
+        addTopic(node.data);
         Object.values(node).forEach(v => { if (v && typeof v === 'object') walk(v); });
     }
     walk(obj);
     return result;
 }
 
+function extractTopicId(value) {
+    const decoded = decodeUrl(value);
+    const match = decoded.match(/(1008[a-z0-9]{34})/i);
+    return match ? match[1] : '';
+}
+
+function replaceParam(value, name, nextValue) {
+    const source = String(value || '');
+    const encodedName = encodeURIComponent(name);
+    const pattern = new RegExp(`(^|[?&])${encodedName}=[^&]*`, 'i');
+    if (pattern.test(source)) {
+        return source.replace(pattern, `$1${encodedName}=${encodeURIComponent(nextValue)}`);
+    }
+    if (!source) return `${encodedName}=${encodeURIComponent(nextValue)}`;
+    const isUrl = /^(?:https?:)?\/\//i.test(source);
+    const separator = isUrl ? (source.includes('?') ? '&' : '?') : '&';
+    return source + separator + `${encodedName}=${encodeURIComponent(nextValue)}`;
+}
+
 // 签到: 用签到 cookie,只替换 fid 和 pageid
 function checkin(fid, name) {
     return new Promise((resolve) => {
-        const url = buildCheckinUrl(fid);
+        const request = buildCheckinRequest(fid);
+        const url = request.url;
         const cleanedHeaders = cleanHeaders($.checkinHeaders);
         const opts = { url: url, headers: cleanedHeaders };
+        if (request.body) opts.body = request.body;
+        const method = request.method === 'POST' ? 'POST' : 'GET';
 
         if ($.debug) {
-            $.log(`[签到 ${name}] URL: ${url}`);
+            $.log(`[签到 ${name}] ${method} URL: ${url}`);
         }
 
-        $.get(opts, (err, resp, data) => {
+        sendRequest(opts, method, (err, resp, data) => {
             if (err) {
                 $.failNum++;
-                $.message.push(`【${name}】❌ 网络错误`);
+                $.message.push(`【${name}】❌ 网络错误: ${shortError(err)}`);
                 resolve();
                 return;
             }
-            const code = resp && resp.statusCode;
+            const code = getStatusCode(resp);
             if (code === 418) { $.failNum++; $.message.push(`【${name}】⚠️ 签到太频繁`); resolve(); return; }
             if (code === 511) { $.failNum++; $.message.push(`【${name}】⚠️ 需要身份验证`); resolve(); return; }
-            if (code !== 200) { $.failNum++; $.message.push(`【${name}】❌ HTTP ${code}`); resolve(); return; }
+            if (code && code !== 200) { $.failNum++; $.message.push(`【${name}】❌ HTTP ${code}`); resolve(); return; }
 
             try {
-                const r = JSON.parse(data);
-                const btnName = (r.button && r.button.name) || '';
-                const errno = r.errno || r.errcode;
-                const errmsg = r.errmsg || r.error_msg || r.msg || '';
+                const r = typeof data === 'string' ? JSON.parse(data) : data;
+                const btnName = (r && r.button && r.button.name) || '';
+                const errno = r && (r.errno || r.errcode || r.code || r.result);
+                const errmsg = getMessage(r);
 
-                // 已签信号: errno=382004 是重复签到的明确错误码
-                // 注意: ext_button.type='sign_in' 不是已签信号,首次签到成功响应里也会带
                 const alreadyChecked =
                     String(errno) === '382004'
-                    || /已签/.test(errmsg);
+                    || /已签到|已经签到/.test(errmsg) && !isSuccessResponse(r);
 
                 if (alreadyChecked) {
                     $.alreadyNum++;
                     $.message.push(`【${name}】✨ 今日已签`);
-                } else if (r.result == 1) {
+                } else if (isSuccessResponse(r)) {
                     $.successNum++;
                     $.message.push(`【${name}】✅ ${btnName || '签到成功'}`);
                 } else if (errmsg) {
@@ -377,14 +514,60 @@ function checkin(fid, name) {
     });
 }
 
-// 拼装签到 URL: 用抓到的 checkinUrl 做模板,替换 fid 和 pageid
+function buildCheckinRequest(fid) {
+    const method = String($.checkinMethod || inferMethod($.checkinUrl, 'GET')).toUpperCase();
+    let url = replaceTopicParam($.checkinUrl, 'fid', `${fid}_-_recommend`);
+    url = replacePageId(url, fid);
+    let body = String($.checkinBody || '');
+    if (body) {
+        body = replaceTopicParam(body, 'fid', `${fid}_-_recommend`);
+        body = replacePageId(body, fid);
+    }
+    return { url, body, method };
+}
+
+// 兼容旧调用方，保留这个函数名。
 function buildCheckinUrl(fid) {
-    let url = $.checkinUrl;
-    // fid 参数: ...&fid=1008xxxxxxxxxx_-_recommend&...
-    url = url.replace(/([?&])fid=[^&]*/, `$1fid=${fid}_-_recommend`);
-    // request_url 里也有 pageid: ...pageid%3D1008xxxxxxxx%26...
-    url = url.replace(/(pageid%3D)[a-f0-9]+/g, `$1${fid}`);
+    return buildCheckinRequest(fid).url;
+}
+
+function replaceTopicParam(source, name, value) {
+    const input = String(source || '');
+    const encodedName = encodeURIComponent(name);
+    const pattern = new RegExp(`(^|[?&])${encodedName}=[^&]*`, 'i');
+    if (pattern.test(input)) {
+        return input.replace(pattern, `$1${encodedName}=${encodeURIComponent(value)}`);
+    }
+    return input;
+}
+
+function replacePageId(source, fid) {
+    let url = String(source || '');
+    // request_url 里常见 pageid%3D，也兼容已解码的 pageid=。
+    url = url.replace(/(pageid(?:%3D|=))1008[a-z0-9]{34}/gi, `$1${fid}`);
     return url;
+}
+
+function inferMethod(url, fallback) {
+    return /\/cardlist(?:[/?]|$)/i.test(String(url || '')) ? 'GET' : fallback;
+}
+
+function getMessage(r) {
+    if (!r || typeof r !== 'object') return '';
+    const nested = r.data && typeof r.data === 'object' ? r.data : {};
+    return String(
+        r.errmsg || r.error_msg || r.msg || nested.errmsg || nested.error_msg ||
+        nested.msg || nested.tipMessage || nested.alert_title || ''
+    );
+}
+
+function isSuccessResponse(r) {
+    if (!r || typeof r !== 'object') return false;
+    return Number(r.result) === 1 || String(r.code || r.errcode || '') === '100000';
+}
+
+function shortError(err) {
+    return String(err && (err.message || err.error || err) || '未知错误').substring(0, 80);
 }
 
 function cleanHeaders(h) {
