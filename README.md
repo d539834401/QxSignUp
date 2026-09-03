@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | 库街区鸣潮游戏签到 | [`kurobbs_wuwa_signin.js`](./kurobbs_wuwa_signin.js) | [`kurobbs_wuwa_signin.conf`](./kurobbs_wuwa_signin.conf) |
 | TapTap鸣潮活动签到及礼包领取 | [`taptap_wuwa_signin.js`](./taptap_wuwa_signin.js) | [`taptap_wuwa_signin.conf`](./taptap_wuwa_signin.conf) |
-| 微博鸣潮超话签到 | [`weibo_wuwa_supertopic_signin.js`](./weibo_wuwa_supertopic_signin.js) | [`weibo_wuwa_supertopic_signin.conf`](./weibo_wuwa_supertopic_signin.conf) |
+| 微博 App 超话签到（含鸣潮） | [`weibo_wuwa_supertopic_signin.js`](./weibo_wuwa_supertopic_signin.js)、[`weibo_wuwa_supertopic_cookie.js`](./weibo_wuwa_supertopic_cookie.js) | [`weibo_wuwa_supertopic_signin.conf`](./weibo_wuwa_supertopic_signin.conf) |
 
 ## 通用安装方法
 
@@ -38,16 +38,16 @@ Token失效时，重新进入库街区 App 的鸣潮签到页即可刷新本地�
 
 如果领取接口要求腾讯验证码，脚本只保留签到结果并通知返回活动页手动领取，不会尝试绕过验证码。礼包和兑换码均有有效期及库存限制，以活动页面为准。
 
-## 微博鸣潮超话签到
+## 微博 App 超话签到（含鸣潮）
 
-微博 App 新版本对旧版超话抓包脚本兼容性较差，本脚本改用微博网页版 Cookie，并且只签到“鸣潮超话”，不会遍历账号关注的其他超话。
+本版本改为抓取微博 App 的接口请求，自动签到账号已关注的所有超话（包括鸣潮），不再依赖 Safari 的微博网页版 Cookie。由于微博接口使用 X-Validator 路径绑定，需要分别获取“关注列表”和“签到”两组请求信息。
 
-1. 保持 Quantumult X 接管网络，在 Safari 登录 `weibo.com`。
-2. 打开鸣潮超话：<https://weibo.com/p/100808805d326c8383e31ed5f47088acce6b77/super_index>。
-3. 如果跳到移动版，点Safari地址栏左侧菜单，选择“请求桌面网站”后刷新。
-4. 收到“凭据获取成功”通知后，手动运行一次“微博·鸣潮超话签到”。
+1. 保持 Quantumult X 接管网络，合并 [`weibo_wuwa_supertopic_signin.conf`](./weibo_wuwa_supertopic_signin.conf)，安装并信任 MitM 证书。
+2. 开启重写后，在微博 App 进入“我的 → 超话社区 → 我的 → 关注”，等待“已获取关注列表 Cookie”通知。
+3. 进入任意超话并手动签到一次，等待“已获取签到 Cookie”通知。
+4. 关闭 Cookie 抓取重写，手动运行一次“微博·超话签到”测试；之后任务每天 08:00 自动执行。
 
-微博Cookie过期、账号触发登录保护或风控时，需要重新执行上述步骤。
+如果抓取失败或 X-Validator 过期，清空 QX 本地持久化数据后重新完成以上两次抓取。关注超话较多时应降低执行频率，避免触发风控。
 
 ## 常见问题
 
@@ -73,7 +73,7 @@ Token失效时，重新进入库街区 App 的鸣潮签到页即可刷新本地�
 
 - 自动抓取与定时任务的双模式结构参考 [`ZenmoFeiShi/Qx`](https://github.com/ZenmoFeiShi/Qx/blob/main/mixc_signin.js)。
 - 库街区接口参考 [`yongyeym/AutoSign_QingLong`](https://github.com/yongyeym/AutoSign_QingLong/blob/main/kurobbs_sign.py) 与 [`TomyJan/Kuro-API-Collection`](https://github.com/TomyJan/Kuro-API-Collection/tree/master/API/encourage/signIn)。
-- 微博超话签到接口行为参考 [`arcturus-script/weibo`](https://github.com/arcturus-script/weibo)。
+- 微博 App 超话脚本基于 [`MaYIHEI/paperclip/app/weibotalk`](https://github.com/MaYIHEI/paperclip/tree/main/app/weibotalk)，并保留其双请求抓取流程。
 
 ## 声明
 
