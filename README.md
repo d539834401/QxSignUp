@@ -1,56 +1,80 @@
-# 库街区 · 鸣潮签到脚本
+# Quantumult X · 鸣潮签到脚本
 
-## 文件
+面向 Quantumult X 的《鸣潮》相关自动签到脚本。登录凭据仅保存在 Quantumult X 本机的 `$prefs` 中，不会提交到仓库或上传到第三方服务。
 
-- `kurobbs_wuwa_signin.js`：Quantumult X 主脚本。
-- `kurobbs_wuwa_signin.conf`：需要合并到 Quantumult X 配置的内容。
+## 脚本列表
 
-## 安装
+| 功能 | 脚本 | 配置 |
+| --- | --- | --- |
+| 库街区鸣潮游戏签到 | [`kurobbs_wuwa_signin.js`](./kurobbs_wuwa_signin.js) | [`kurobbs_wuwa_signin.conf`](./kurobbs_wuwa_signin.conf) |
+| TapTap鸣潮活动签到及礼包领取 | [`taptap_wuwa_signin.js`](./taptap_wuwa_signin.js) | [`taptap_wuwa_signin.conf`](./taptap_wuwa_signin.conf) |
+| 微博鸣潮超话签到 | [`weibo_wuwa_supertopic_signin.js`](./weibo_wuwa_supertopic_signin.js) | [`weibo_wuwa_supertopic_signin.conf`](./weibo_wuwa_supertopic_signin.conf) |
 
-1. 打开 [`kurobbs_wuwa_signin.conf`](./kurobbs_wuwa_signin.conf)，将其中的 `[rewrite_local]`、`[task_local]` 和 `[mitm]` 内容合并到正在使用的 Quantumult X 配置文件。
-2. 在 Quantumult X 中生成、安装并信任 HTTPS 解密证书，开启重写和 MitM。
-3. 保持 Quantumult X 接管网络，完全关闭并重新打开库街区 App。
-4. 进入“鸣潮 → 签到”页面。收到“参数获取成功”通知即表示 Token、库街区 UID、角色 UID 和服务器 ID 已保存在本机。
-5. 打开 Quantumult X 的任务列表，手动运行一次“库街区·鸣潮签到”进行测试。
+## 通用安装方法
 
-## 工作逻辑
+1. 打开所需功能对应的 `.conf` 文件。
+2. 将其中的 `[rewrite_local]`、`[task_local]` 和 `[mitm]` 内容合并到正在使用的 Quantumult X 配置文件；不要重复创建同名段落。
+3. 在 Quantumult X 中生成、安装并信任 HTTPS 解密证书，开启重写和 MitM。
+4. 按下方说明获取一次登录凭据。
+5. 在 Quantumult X 的任务列表中手动运行对应任务进行测试。
 
-定时任务会先调用签到初始化接口查询 `isSigIn`：
+## 库街区鸣潮签到
 
-- 今天已签到：只通知签到天数和奖励，不重复提交。
-- 今天未签到：调用鸣潮签到接口，成功后再次查询状态进行确认。
-- Token 失效：提示重新进入签到页抓取，不会盲目重复请求。
+保持 Quantumult X 接管网络，完全关闭并重新打开库街区 App，进入“鸣潮 → 签到”页面。收到“参数获取成功”通知后即可运行任务。
 
-脚本只处理鸣潮游戏签到，不执行发帖、点赞、分享或库街区社区任务。
+定时任务会先查询今日签到状态：已经签到时不会重复提交；尚未签到时自动签到并再次查询确认。脚本只处理鸣潮游戏签到，不执行发帖、点赞、分享或库街区社区任务。
+
+Token失效时，重新进入库街区 App 的鸣潮签到页即可刷新本地凭据。
+
+## TapTap鸣潮活动签到
+
+保持 Quantumult X 接管网络并登录 TapTap，然后打开当前《鸣潮》签到活动页。页面加载并出现“凭据获取成功”通知即可，无需为了抓取凭据重复点击签到。
+
+当前3.6活动入口：
+
+<https://www.taptap.cn/events/game-sign/frndkdpd>
+
+任务会自动识别活动代码、执行签到，并尝试领取所有已经解锁但尚未领取的签到礼包。后续版本更换活动页面时，打开新活动页一次即可更新本地活动代码和凭据。
+
+如果领取接口要求腾讯验证码，脚本只保留签到结果并通知返回活动页手动领取，不会尝试绕过验证码。礼包和兑换码均有有效期及库存限制，以活动页面为准。
+
+## 微博鸣潮超话签到
+
+微博 App 新版本对旧版超话抓包脚本兼容性较差，本脚本改用微博网页版 Cookie，并且只签到“鸣潮超话”，不会遍历账号关注的其他超话。
+
+1. 保持 Quantumult X 接管网络，在 Safari 登录 `weibo.com`。
+2. 打开鸣潮超话：<https://weibo.com/p/100808805d326c8383e31ed5f47088acce6b77/super_index>。
+3. 如果跳到移动版，点Safari地址栏左侧菜单，选择“请求桌面网站”后刷新。
+4. 收到“凭据获取成功”通知后，手动运行一次“微博·鸣潮超话签到”。
+
+微博Cookie过期、账号触发登录保护或风控时，需要重新执行上述步骤。
 
 ## 常见问题
 
-### 打开签到页没有“参数获取成功”通知
+### 打开页面没有凭据获取通知
 
 - 确认 Quantumult X 正在接管网络。
-- 确认已开启重写和 MitM，且证书已安装并信任。
-- 检查 `api.kurobbs.com` 是否包含在 MitM hostname 中。
-- 完全关闭库街区 App 后重新打开，再进入鸣潮签到页面。
-
-### 提示 Token 失效
-
-重新打开库街区 App 的鸣潮签到页。页面请求被拦截后，本机保存的参数会自动更新。
+- 确认重写和 MitM 已启用，证书已安装并信任。
+- 检查对应域名已追加至现有 `[mitm]` 的 `hostname`。
+- 完全关闭相关 App 或浏览器页面后重新打开。
 
 ### 使用本地脚本
 
-如不希望远程引用，可下载 `kurobbs_wuwa_signin.js`，放入 `iCloud Drive/QuantumultX/Scripts/`，再把配置文件中的两处 Raw 地址改成：
+如果不希望使用 Raw 远程地址，可以下载对应 `.js` 文件，放入 `iCloud Drive/Quantumult X/Scripts/` 或“我的 iPhone/Quantumult X/Scripts/”，然后把 `.conf` 中的 Raw 地址换成本地脚本文件名。
 
-```text
-kurobbs_wuwa_signin.js
-```
+## 安全与使用说明
 
-不要把抓取到的 Token、请求日志或 Quantumult X 本地存储内容提交到 GitHub。
+- 不要把抓取到的Token、Cookie、请求日志或Quantumult X持久化存储内容提交到GitHub。
+- 自动化接口可能随平台更新而变化；首次安装或更新后请先手动运行测试。
+- 不要高频执行任务；使用前请自行确认并遵守库街区、TapTap、微博及游戏活动规则。
+- TapTap同类型渠道礼包兑换码通常每个游戏角色只能兑换一次。
 
 ## 参考实现
 
-- 自动抓取与定时任务的双模式结构参考 [`ZenmoFeiShi/Qx`](https://github.com/ZenmoFeiShi/Qx/blob/main/mixc_signin.js) 的一点万象脚本。
-- 库街区接口、返回码和签到字段参考 [`yongyeym/AutoSign_QingLong`](https://github.com/yongyeym/AutoSign_QingLong/blob/main/kurobbs_sign.py) 及 [`TomyJan/Kuro-API-Collection`](https://github.com/TomyJan/Kuro-API-Collection/tree/master/API/encourage/signIn)。
+- 自动抓取与定时任务的双模式结构参考 [`ZenmoFeiShi/Qx`](https://github.com/ZenmoFeiShi/Qx/blob/main/mixc_signin.js)。
+- 库街区接口参考 [`yongyeym/AutoSign_QingLong`](https://github.com/yongyeym/AutoSign_QingLong/blob/main/kurobbs_sign.py) 与 [`TomyJan/Kuro-API-Collection`](https://github.com/TomyJan/Kuro-API-Collection/tree/master/API/encourage/signIn)。
+- 微博超话签到接口行为参考 [`arcturus-script/weibo`](https://github.com/arcturus-script/weibo)。
 
 ## 声明
 
-脚本仅供个人学习与自动化自用。库街区接口变化或风控策略可能导致脚本失效，请勿高频调用。
+脚本仅供个人学习与自动化自用，不保证平台接口长期有效。
