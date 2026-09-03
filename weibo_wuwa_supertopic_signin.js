@@ -27,9 +27,10 @@
  *
  * ===== Quantumult X =====
  * [MITM]
- * hostname = api.weibo.cn
+ * hostname = api.weibo.cn, mapi.weibo.com
  * [rewrite_local]
- * ^https:\/\/api\.weibo\.cn\/2\/(statuses\/container_timeline_topicsub|page\/button) url script-request-body https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js
+ * ^https?:\/\/m?api\.weibo\.c(n|om)\/2\/statuses\/container_timeline_topicsub url script-request-body https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js
+ * ^https?:\/\/m?api\.weibo\.c(n|om)\/2\/page\/button url script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js
  * [task_local]
  * 0 8 * * * https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js, tag=微博超话签到, img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png, enabled=true
  *
