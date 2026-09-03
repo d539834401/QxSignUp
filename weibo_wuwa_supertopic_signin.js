@@ -28,9 +28,9 @@
  * [MITM]
  * hostname = api.weibo.cn, mapi.weibo.com
  * [rewrite_local]
- * ^https?:\/\/m?api\.weibo\.c(n|om)\/2\/statuses\/container_timeline_topic(?:sub|page) url script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js
- * ^https?:\/\/m?api\.weibo\.c(n|om)\/2\/cardlist url script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js
- * ^https?:\/\/m?api\.weibo\.c(n|om)\/2\/page\/button url script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js
+ * ^https?:\/\/m?api\.weibo\.c(n|om)\/2\/statuses\/container_timeline_topic(?:sub|page)(?:[\/?].*)?$ url script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js
+ * ^https?:\/\/m?api\.weibo\.c(n|om)\/2\/cardlist.*(?:myfollow|followsuper|need(?:_|%5f)head(?:_|%5f)cards|super(?:topic)?) url script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js
+ * ^https?:\/\/m?api\.weibo\.c(n|om)\/2\/page\/button.*active(?:_|%5f)checkin url script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js
  * [task_local]
  * 0 8 * * * https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js, tag=微博超话签到, img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png, enabled=true
  *
@@ -56,7 +56,7 @@
 
 const $ = new Env("微博超话");
 
-const SCRIPT_VERSION = "2026-09-03.r2";
+const SCRIPT_VERSION = "2026-09-03.r3";
 if (typeof $request === "undefined") $.log(`[INFO] 脚本版本 ${SCRIPT_VERSION}`);
 
 $.delete_cookie = false;
@@ -73,13 +73,18 @@ const KEY_CHECKIN_HEADERS = 'evil_tokencheckinheaders';
 const KEY_CHECKIN_BODY = 'evil_tokencheckinbody';
 const KEY_CHECKIN_METHOD = 'evil_tokencheckinmethod';
 
+let doneCalled = false;
+
 if (isRequestMode()) {
-    // 保留旧版单脚本配置的兼容性；新配置请使用 cookie.js。
+    // 保留旧版单脚本配置的兼容性。
     captureRequest();
 } else {
     runTask()
-        .catch((e) => $.log(`❌ 执行失败: ${e.message || e}`))
-        .finally(() => $.done());
+        .then(() => finishScript())
+        .catch((e) => {
+            $.log(`❌ 执行失败: ${e.message || e}`);
+            finishScript();
+        });
 }
 
 function isRequestMode() {
@@ -139,12 +144,12 @@ async function runTask() {
 function captureRequest() {
     if (!$request) {
         $.log('[ERROR] 该脚本仅作为请求重写脚本运行');
-        $.done();
+        finishScript();
         return;
     }
     const method = String($request.method || '').toUpperCase();
     if (method === 'OPTIONS') {
-        $.done();
+        finishScript();
         return;
     }
 
@@ -185,7 +190,7 @@ function captureRequest() {
             $.log('[ERROR] 列表请求保存失败: ' + (e.message || e));
             $.msg('微博超话', '🚫 列表请求保存失败', String(e.message || e));
         }
-        $.done();
+        finishScript();
         return;
     }
 
@@ -214,15 +219,21 @@ function captureRequest() {
             $.log('[ERROR] 签到请求保存失败: ' + (e.message || e));
             $.msg('微博超话', '🚫 签到请求保存失败', String(e.message || e));
         }
-        $.done();
+        finishScript();
         return;
     }
 
-    $.done();
+    finishScript();
 }
 
 function isNewListRequest(url) {
     return /\/2\/statuses\/container_timeline_topic(?:sub|page)(?:[/?]|$)/i.test(url);
+}
+
+function finishScript(value = {}) {
+    if (doneCalled) return;
+    doneCalled = true;
+    $.done(value);
 }
 
 function isLegacyListRequest(url) {
