@@ -1,11 +1,12 @@
-# Quantumult X · 鸣潮签到脚本
+# Quantumult X · 自动签到脚本
 
-面向 Quantumult X 的《鸣潮》相关自动签到脚本。登录凭据仅保存在 Quantumult X 本机的 `$prefs` 中，不会提交到仓库或上传到第三方服务。
+面向 Quantumult X 的个人自动签到脚本。登录凭据仅保存在 Quantumult X 本机的 `$prefs` 中，不会提交到仓库或上传到第三方服务。
 
 ## 脚本列表
 
 | 功能 | 脚本 | 配置 |
 | --- | --- | --- |
+| 微信小程序未来荟每日签到 | [`wentiweilaihui_signin.js`](./wentiweilaihui_signin.js) | [`wentiweilaihui_signin.conf`](./wentiweilaihui_signin.conf) |
 | 库街区鸣潮游戏签到 | [`kurobbs_wuwa_signin.js`](./kurobbs_wuwa_signin.js) | [`kurobbs_wuwa_signin.conf`](./kurobbs_wuwa_signin.conf) |
 | TapTap鸣潮活动签到及礼包领取 | [`taptap_wuwa_signin.js`](./taptap_wuwa_signin.js) | [`taptap_wuwa_signin.conf`](./taptap_wuwa_signin.conf) |
 | 微博 App 超话签到（含鸣潮） | [`weibo_wuwa_supertopic_signin.js`](./weibo_wuwa_supertopic_signin.js)（兼容新旧接口） | [`weibo_wuwa_supertopic_signin.conf`](./weibo_wuwa_supertopic_signin.conf) |
@@ -17,6 +18,14 @@
 3. 在 Quantumult X 中生成、安装并信任 HTTPS 解密证书，开启重写和 MitM。
 4. 按下方说明获取一次登录凭据。
 5. 在 Quantumult X 的任务列表中手动运行对应任务进行测试。
+
+## 未来荟每日签到
+
+保持 Quantumult X 接管网络，合并 [`wentiweilaihui_signin.conf`](./wentiweilaihui_signin.conf)，然后完全关闭并重新打开微信小程序“未来荟”。首页加载时会请求会员卡详情，脚本从该请求中保存 `Wechat JWT`、`appId`、项目 UUID 及必要请求头；收到“参数获取成功”通知后即可运行任务。
+
+任务每天 08:05 运行，先调用签到记录接口。今日已经签到时只通知当前周期签到天数与积分；未签到时才提交签到，然后重新查询签到记录与积分进行确认。JWT 失效后重新打开未来荟小程序即可刷新，不需要为了抓取凭据重复点击签到按钮。
+
+本脚本使用的是当前未来荟接口 `wlhmobile.crland.com.cn`，不是旧版“春茧”接口 `program.springcocoon.com`。接口已于 2026-09-05 使用 iPhone 上的未来荟小程序实时验证。
 
 ## 库街区鸣潮签到
 
@@ -76,6 +85,7 @@ Token失效时，重新进入库街区 App 的鸣潮签到页即可刷新本地�
 ## 参考实现
 
 - 自动抓取与定时任务的双模式结构参考 [`ZenmoFeiShi/Qx`](https://github.com/ZenmoFeiShi/Qx/blob/main/mixc_signin.js)。
+- 未来荟接口参考 [`Cat-zaizai/ZaiZaiCat-Checkin`](https://github.com/Cat-zaizai/ZaiZaiCat-Checkin/tree/main/script/huaruntong/wentiweilaihui)，并通过当前小程序请求实时复核。
 - 库街区接口参考 [`yongyeym/AutoSign_QingLong`](https://github.com/yongyeym/AutoSign_QingLong/blob/main/kurobbs_sign.py) 与 [`TomyJan/Kuro-API-Collection`](https://github.com/TomyJan/Kuro-API-Collection/tree/master/API/encourage/signIn)。
 - 微博 App 超话脚本基于 [`MaYIHEI/paperclip/app/weibotalk`](https://github.com/MaYIHEI/paperclip/tree/main/app/weibotalk)，并保留其双请求抓取流程。
 
