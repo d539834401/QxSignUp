@@ -7,6 +7,7 @@
 | 功能 | 脚本 | 配置 |
 | --- | --- | --- |
 | 微信小程序未来荟每日签到 | [`wentiweilaihui_signin.js`](./wentiweilaihui_signin.js) | [`wentiweilaihui_signin.conf`](./wentiweilaihui_signin.conf) |
+| 华润通 H5/微信签到 | [`huaruntong_signin.js`](./huaruntong_signin.js) | [`huaruntong_signin.conf`](./huaruntong_signin.conf) |
 | 库街区鸣潮游戏签到 | [`kurobbs_wuwa_signin.js`](./kurobbs_wuwa_signin.js) | [`kurobbs_wuwa_signin.conf`](./kurobbs_wuwa_signin.conf) |
 | TapTap鸣潮活动签到及礼包领取 | [`taptap_wuwa_signin.js`](./taptap_wuwa_signin.js) | [`taptap_wuwa_signin.conf`](./taptap_wuwa_signin.conf) |
 | 微博 App 超话签到（含鸣潮） | [`weibo_wuwa_supertopic_signin.js`](./weibo_wuwa_supertopic_signin.js)（兼容新旧接口） | [`weibo_wuwa_supertopic_signin.conf`](./weibo_wuwa_supertopic_signin.conf) |
@@ -26,6 +27,14 @@
 任务每天 08:05 运行，先调用签到记录接口。今日已经签到时只通知当前周期签到天数与积分；未签到时才提交签到，然后重新查询签到记录与积分进行确认。JWT 失效后重新打开未来荟小程序即可刷新，不需要为了抓取凭据重复点击签到按钮。
 
 本脚本使用的是当前未来荟接口 `wlhmobile.crland.com.cn`，不是旧版“春茧”接口 `program.springcocoon.com`。接口已于 2026-09-05 使用 iPhone 上的未来荟小程序实时验证。
+
+## 华润通每日签到
+
+合并 [`huaruntong_signin.conf`](./huaruntong_signin.conf)，开启重写和 MitM 后打开[华润通签到页](https://cloud.huaruntong.cn/web/online/#/signIn)。页面会把登录信息写入 `localStorage.uInfo`；脚本通过同源探测请求获取 token 并仅保存到 QX 本地 `$prefs`，不会把 token 写入仓库或第三方服务。
+
+任务每天 07:15 运行，先调用 `/api/points/queryWeekSignin` 判断当天状态；未签到才调用 `/api/points/saveQuestionSignin`，随后复核签到天数和积分。请求体使用华润通当前 `crypto4mid` 库（HMAC-MD5、AES-CBC、RSA-OAEP），并实时验证了 `mid.huaruntong.cn` 的成功签到响应。
+
+首次抓取如果没有通知，请完全关闭微信页面后重新打开签到链接；确保 MitM 中包含 `mid.huaruntong.cn`、`cloud.huaruntong.cn` 和 `activity.huaruntong.cn`。
 
 ## 库街区鸣潮签到
 
@@ -86,6 +95,7 @@ Token失效时，重新进入库街区 App 的鸣潮签到页即可刷新本地�
 
 - 自动抓取与定时任务的双模式结构参考 [`ZenmoFeiShi/Qx`](https://github.com/ZenmoFeiShi/Qx/blob/main/mixc_signin.js)。
 - 未来荟接口参考 [`Cat-zaizai/ZaiZaiCat-Checkin`](https://github.com/Cat-zaizai/ZaiZaiCat-Checkin/tree/main/script/huaruntong/wentiweilaihui)，并通过当前小程序请求实时复核。
+- 华润通微信版接口参考 [`Cat-zaizai/ZaiZaiCat-Checkin`](https://github.com/Cat-zaizai/ZaiZaiCat-Checkin/tree/main/script/huaruntong/huaruntong_wx)，并通过当前 H5 签到请求实时复核。
 - 库街区接口参考 [`yongyeym/AutoSign_QingLong`](https://github.com/yongyeym/AutoSign_QingLong/blob/main/kurobbs_sign.py) 与 [`TomyJan/Kuro-API-Collection`](https://github.com/TomyJan/Kuro-API-Collection/tree/master/API/encourage/signIn)。
 - 微博 App 超话脚本基于 [`MaYIHEI/paperclip/app/weibotalk`](https://github.com/MaYIHEI/paperclip/tree/main/app/weibotalk)，并保留其双请求抓取流程。
 
