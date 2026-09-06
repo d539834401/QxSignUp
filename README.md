@@ -8,6 +8,7 @@
 | --- | --- | --- |
 | 微信小程序未来荟每日签到 | [`wentiweilaihui_signin.js`](./wentiweilaihui_signin.js) | [`wentiweilaihui_signin.conf`](./wentiweilaihui_signin.conf) |
 | 华润通 H5/微信签到 | [`huaruntong_signin.js`](./huaruntong_signin.js) | [`huaruntong_signin.conf`](./huaruntong_signin.conf) |
+| 华润通·999 每日答题 | [`huaruntong_999_quiz.js`](./huaruntong_999_quiz.js) | [`huaruntong_999_quiz.conf`](./huaruntong_999_quiz.conf) |
 | 库街区鸣潮游戏签到 | [`kurobbs_wuwa_signin.js`](./kurobbs_wuwa_signin.js) | [`kurobbs_wuwa_signin.conf`](./kurobbs_wuwa_signin.conf) |
 | TapTap鸣潮活动签到及礼包领取 | [`taptap_wuwa_signin.js`](./taptap_wuwa_signin.js) | [`taptap_wuwa_signin.conf`](./taptap_wuwa_signin.conf) |
 | 微博 App 超话签到（含鸣潮） | [`weibo_wuwa_supertopic_signin.js`](./weibo_wuwa_supertopic_signin.js)（兼容新旧接口） | [`weibo_wuwa_supertopic_signin.conf`](./weibo_wuwa_supertopic_signin.conf) |
@@ -35,6 +36,12 @@
 任务每天 07:15 运行，先调用 `/api/points/queryWeekSignin` 判断当天状态；未签到才调用 `/api/points/saveQuestionSignin`，随后复核签到天数和积分。请求体使用华润通当前 `crypto4mid` 库（HMAC-MD5、AES-CBC、RSA-OAEP），并实时验证了 `mid.huaruntong.cn` 的成功签到响应。
 
 首次抓取如果没有通知，请完全关闭微信页面后重新打开签到链接；确保 MitM 中包含 `mid.huaruntong.cn`、`cloud.huaruntong.cn` 和 `activity.huaruntong.cn`。
+
+## 华润通·999 每日答题
+
+合并 [`huaruntong_999_quiz.conf`](./huaruntong_999_quiz.conf)，开启重写和 MitM 后，在微信中搜索并打开小程序“999会员中心”，进入“健康答题”或“每日一题”页面。脚本会从题目请求中保存该活动独立使用的 `token`、手机号和必要请求头；它与普通华润通签到的 token 不是同一份凭据。
+
+任务每天 07:25 运行。脚本先获取当天题目，从接口返回选项的 `right` 标记中提取正确答案，再调用答题接口提交；已经完成、登录失效、没有题目或接口异常都会单独通知。活动入口和名称可能随运营调整，抓不到参数时请检查网络活动中是否出现 `api4.jiankangyouyi.com`。
 
 ## 库街区鸣潮签到
 
@@ -96,6 +103,7 @@ Token失效时，重新进入库街区 App 的鸣潮签到页即可刷新本地�
 - 自动抓取与定时任务的双模式结构参考 [`ZenmoFeiShi/Qx`](https://github.com/ZenmoFeiShi/Qx/blob/main/mixc_signin.js)。
 - 未来荟接口参考 [`Cat-zaizai/ZaiZaiCat-Checkin`](https://github.com/Cat-zaizai/ZaiZaiCat-Checkin/tree/main/script/huaruntong/wentiweilaihui)，并通过当前小程序请求实时复核。
 - 华润通微信版接口参考 [`Cat-zaizai/ZaiZaiCat-Checkin`](https://github.com/Cat-zaizai/ZaiZaiCat-Checkin/tree/main/script/huaruntong/huaruntong_wx)，并通过当前 H5 签到请求实时复核。
+- 华润通·999 每日答题接口参考 [`Cat-zaizai/ZaiZaiCat-Checkin`](https://github.com/Cat-zaizai/ZaiZaiCat-Checkin/tree/main/script/huaruntong/999)，Quantumult X 版本会自动抓取该活动独立的 token 和手机号。
 - 库街区接口参考 [`yongyeym/AutoSign_QingLong`](https://github.com/yongyeym/AutoSign_QingLong/blob/main/kurobbs_sign.py) 与 [`TomyJan/Kuro-API-Collection`](https://github.com/TomyJan/Kuro-API-Collection/tree/master/API/encourage/signIn)。
 - 微博 App 超话脚本基于 [`MaYIHEI/paperclip/app/weibotalk`](https://github.com/MaYIHEI/paperclip/tree/main/app/weibotalk)，并保留其双请求抓取流程。
 
