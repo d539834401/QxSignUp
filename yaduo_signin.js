@@ -8,12 +8,15 @@
 
 2023.08.08 修复通知提示，新增抽奖任务
 
+Version: 2.0.0
+Updated: 2026-09-14
+新增凭据校验、签到状态识别、分阶段失败通知。
 使用教程：
- 1.复制Cookie脚本到本地
- 2.打开亚朵酒店app手动签到一次，若提示获取cookie成功则可以使用签到脚本
- 3.关闭获取token脚本
+ 1.合并 yaduo_signin.conf 中的 Quantumult X 配置
+ 2.打开亚朵酒店 App 的积分/签到页面并手动进入一次
+ 3.收到参数获取成功通知后关闭抓取规则
 
-【Loon】 :
+【Loon 参考配置】：
 *************************
 [Script]
 cron "0 8 8 * * *" script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/main/yaduo_signin.js, timeout=300, tag=亚朵酒店签到
@@ -37,117 +40,518 @@ hostname =miniapp.yaduo.com
 ******************************************/
 
 // env.js 全局
-const $ = new Env("亚朵酒店签到");
+const SCRIPT_NAME = "亚朵酒店签到";
+const STORE_URL_KEY = "adjd_url";
+const STORE_HEADER_KEY = "adjd_header";
+const API_BASE = "https://miniapp.yaduo.com";
+const SIGN_PATH = "/atourlife/signIn/signIn";
+const LOTTERY_PATH = "/atourlife/signIn/lottery";
+const $ = new Env(SCRIPT_NAME);
 
-//环境变量
-const sliverkiss_url = $.getdata('adjd_url')
-const sliverkiss_header = $.getjson('adjd_header')
-//六宫格设置抽奖,默认为随机,可填入0~5
-const sliverkiss_draw=$.getdata('adjd_draw')||'';
-//通知相关
-var message = "";
-var account;
-var user;
+function finish(value) {
+    $done(value === undefined ? {} : value);
+}
 
-//主程序执行入口
-!(async () => {
-    //没有设置变量,执行Cookie获取
-    if (typeof $request != "undefined") {
-        getCookie();
+function notify(subtitle, body) {
+    $notify(SCRIPT_NAME, subtitle, body);
+}
+
+function normalizeHeaders(headers) {
+    const result = {};
+    Object.keys(headers || {}).forEach(function (key) {
+        const value = headers[key];
+        result[String(key).toLowerCase()] = Array.isArray(value)
+            ? value.join(", ")
+            : String(value);
+    });
+    return result;
+}
+
+function cleanQueryFromUrl(url) {
+    const text = String(url || "").trim();
+    const questionIndex = text.indexOf("?");
+    if (questionIndex < 0) return "";
+    return text.slice(questionIndex + 1).split("#")[0].replace(/^\?+/, "").trim();
+}
+
+function readStoredHeaders() {
+    const raw = $prefs.valueForKey(STORE_HEADER_KEY);
+    if (!raw || /^(?:undefined|null|none)$/i.test(String(raw).trim())) return null;
+    try {
+        const headers = JSON.parse(raw);
+        if (!headers || typeof headers !== "object" || Array.isArray(headers)) return null;
+        return normalizeHeaders(headers);
+    } catch (error) {
+        console.log("[" + SCRIPT_NAME + "] 本地请求头解析失败：" + error);
+        return null;
+    }
+}
+
+function readProfile() {
+    const query = String($prefs.valueForKey(STORE_URL_KEY) || "").trim()
+        .replace(/^\?+/, "");
+    const headers = readStoredHeaders();
+    if (!query || !headers) return null;
+    return { query: query, headers: headers };
+}
+
+function hasCredentialHint(query, headers) {
+    const headerKeys = /authorization|token|cookie|session|openid|user[_-]?id|access|jwt|auth|ticket/i;
+    const hasHeaderCredential = Object.keys(headers || {}).some(function (key) {
+        const value = String(headers[key] || "").trim();
+        return headerKeys.test(key) && value &&
+            !/^(?:undefined|null|none)$/i.test(value);
+    });
+    const hasQueryCredential = String(query || "").split("&").some(function (part) {
+        const pieces = part.split("=");
+        const key = String(pieces.shift() || "");
+        const value = pieces.join("=").trim();
+        return headerKeys.test(key) && value &&
+            !/^(?:undefined|null|none)$/i.test(value);
+    });
+    return hasHeaderCredential || hasQueryCredential;
+}
+
+function profileProblems(profile) {
+    const problems = [];
+    if (!profile || !String(profile.query || "").trim()) problems.push("URL 参数");
+    if (!profile || !profile.headers || !Object.keys(profile.headers).length) {
+        problems.push("请求头");
+    } else if (!hasCredentialHint(profile.query, profile.headers)) {
+        problems.push("Token/Cookie/Authorization");
+    }
+    return problems;
+}
+
+function sameProfile(previous, current) {
+    if (!previous || !current) return false;
+    return previous.query === current.query &&
+        JSON.stringify(previous.headers) === JSON.stringify(current.headers);
+}
+
+function captureProfile() {
+    const url = String($request && $request.url || "");
+    const query = cleanQueryFromUrl(url);
+    const headers = normalizeHeaders(($request && $request.headers) || {});
+    const current = { query: query, headers: headers };
+    const problems = profileProblems(current);
+
+    if (problems.length) {
+        notify(
+            "未获取到Token/登录参数 ❌",
+            "本次请求缺少：" + problems.join("、") +
+            "\n请保持重写和 MitM 开启，重新进入亚朵 App 的积分/签到页面"
+        );
+        finish({});
         return;
     }
-    //开始执行日常签到
-    await signin();
-    await lottery();
-    await notify();
-})()
-    .catch((e) => {
-        $.log("", `❌失败! 原因: ${e}!`, "");
-    })
-    .finally(() => {
-        $.done();
-    });
 
-//签到函数
-function signin() {
-    return new Promise((resolve) => {
-        const signinRequest = {
-            //签到任务调用签到接口
-            url: `https://miniapp.yaduo.com/atourlife/signIn/signIn?${sliverkiss_url}`,
-            //请求头, 所有接口通用
-            headers: sliverkiss_header
+    const previous = readProfile();
+    const savedUrl = $prefs.setValueForKey(query, STORE_URL_KEY);
+    const savedHeaders = $prefs.setValueForKey(JSON.stringify(headers), STORE_HEADER_KEY);
+    if (!savedUrl || !savedHeaders) {
+        notify(
+            "Token保存失败 ❌",
+            "已捕获请求，但无法写入 Quantumult X 本地持久化数据"
+        );
+        finish({});
+        return;
+    }
+
+    if (!sameProfile(previous, current)) {
+        notify(
+            "Token获取成功 ✅",
+            "亚朵签到请求参数已保存到 QX 本机\n" +
+            "已保存 URL 参数和请求头，不会写入仓库"
+        );
+    } else {
+        console.log("[" + SCRIPT_NAME + "] 登录参数未变化，已刷新本地保存");
+    }
+    finish({});
+}
+
+function requestHeaders(headers) {
+    const result = {};
+    Object.keys(headers || {}).forEach(function (key) {
+        if (/^(?:host|content-length|connection|transfer-encoding)$/i.test(key)) return;
+        result[key] = headers[key];
+    });
+    return result;
+}
+
+function requestApi(method, path, profile, extraQuery) {
+    return new Promise(function (resolve, reject) {
+        const baseQuery = profile.query ? "?" + profile.query : "";
+        const suffix = extraQuery
+            ? (baseQuery ? "&" : "?") + extraQuery
+            : "";
+        const options = {
+            url: API_BASE + path + baseQuery + suffix,
+            headers: requestHeaders(profile.headers)
         };
-        //post方法
-        $.get(signinRequest, (error, response, data) => {
-            try {
-                let result = JSON.parse(data);
-                console.log(result);
-                if (result?.retcode == 0) {
-                    //obj.error是0代表完成
-                    message += `签到:${result?.result?.debrisDesc} \n`;
-                } else {
-                    message += `签到:${result?.retmsg}\n`;
-                }
-            } catch (e) {
-                $.logErr(e, "❌请重新登陆更新Cookie");
-            } finally {
-                resolve();
+        const callback = function (error, response, data) {
+            if (error) {
+                reject(new Error("网络请求失败：" + String(error)));
+                return;
             }
-        });
+
+            const status = Number(response && (response.statusCode || response.status) || 0);
+            const raw = typeof data === "string"
+                ? data
+                : (data && typeof data === "object"
+                    ? JSON.stringify(data)
+                    : String(response && response.body || ""));
+            let body;
+            try {
+                body = JSON.parse(raw || "{}");
+            } catch (parseError) {
+                const errorMessage = new Error(
+                    "接口返回无法解析（HTTP " + status + "）：" +
+                    String(raw || "").slice(0, 120)
+                );
+                errorMessage.httpStatus = status;
+                reject(errorMessage);
+                return;
+            }
+
+            if (status && (status < 200 || status >= 300)) {
+                const errorMessage = new Error(
+                    "HTTP " + status + "：" + responseMessage(body)
+                );
+                errorMessage.httpStatus = status;
+                errorMessage.body = body;
+                reject(errorMessage);
+                return;
+            }
+            resolve({ status: status, body: body });
+        };
+
+        try {
+            if (String(method).toUpperCase() === "POST") {
+                $.post(options, callback);
+            } else {
+                $.get(options, callback);
+            }
+        } catch (error) {
+            reject(new Error("请求启动失败：" + String(error)));
+        }
     });
 }
 
-//抽奖
-function lottery() {
-    //六宫格随机生成抽奖格子
-    let drawNumber =sliverkiss_draw||parseInt(Math.random() * (5 - 0 + 1) + 0);
-    return new Promise((resolve) => {
-        const signinRequest = {
-            //签到任务调用签到接口
-            url: `https://miniapp.yaduo.com/atourlife/signIn/lottery?${sliverkiss_url}&code=${drawNumber}`,
-            //请求头, 所有接口通用
-            headers: sliverkiss_header
-        };
-        //post方法
-        $.post(signinRequest, (error, response, data) => {
-            try {
-                let result = JSON.parse(data);
-                console.log(result);
-                if (result?.retcode == 0&&result?.result) {
-                    //obj.error是0代表完成
-                    for (let res of result?.result) {
-                        if (res?.selected) {
-                            message += `抽奖:${res?.prizeName} \n`;
-                            break;
-                        }
-                    }
-                } else {
-                    message += `抽奖:${result?.retmsg}\n`;
-                }
-            } catch (e) {
-                $.logErr(e, "❌请重新登陆更新Cookie");
-            } finally {
-                resolve();
-            }
-        });
-    });
+function responseData(body) {
+    if (body && body.result !== undefined) return body.result;
+    if (body && body.data !== undefined) return body.data;
+    return body || {};
 }
 
-//获取Cookie
-function getCookie() {
-    if ($request && $request.method != 'OPTIONS') {
-        const signHeader = JSON.stringify($request.headers)
-        const signUrl = $request.url;
-        let ck_info = signUrl.split('?');
-        let signUrlVal = ck_info[1];
-        if (signHeader) $.setdata(signHeader, 'adjd_header');
-        if (signUrl) $.setdata(signUrlVal, 'adjd_url')
-        $.msg($.name, "", "获取签到Cookie成功🎉");
+function responseCode(body) {
+    const data = responseData(body);
+    const values = [
+        body && body.retcode,
+        body && body.code,
+        body && body.errcode,
+        body && body.errorCode,
+        data && !Array.isArray(data) && data.retcode,
+        data && !Array.isArray(data) && data.code
+    ];
+    for (let index = 0; index < values.length; index += 1) {
+        if (values[index] !== undefined && values[index] !== null && values[index] !== "") {
+            return String(values[index]);
+        }
+    }
+    return "";
+}
+
+function responseMessage(body) {
+    const data = responseData(body);
+    const result = body && body.result;
+    const values = [
+        body && body.retmsg,
+        body && body.msg,
+        body && body.message,
+        body && body.errmsg,
+        body && body.text,
+        result && !Array.isArray(result) && result.debrisDesc,
+        result && !Array.isArray(result) && result.message,
+        data && !Array.isArray(data) && data.debrisDesc,
+        data && !Array.isArray(data) && data.message
+    ];
+    for (let index = 0; index < values.length; index += 1) {
+        const text = String(values[index] || "").trim();
+        if (text && !/^(?:undefined|null)$/i.test(text)) return text;
+    }
+    return "未知错误";
+}
+
+function safeString(value) {
+    try {
+        return JSON.stringify(value || {});
+    } catch (error) {
+        return "";
     }
 }
-//通知函数
-async function notify() {
-    $.msg($.name, "", message);
+
+function booleanLike(value) {
+    return value === true || value === 1 || value === "1" || /^(?:true|yes)$/i.test(String(value || ""));
+}
+
+function isSuccess(body) {
+    const code = responseCode(body).toLowerCase();
+    return body && (body.success === true || body.ok === true) ||
+        code === "0" || code === "200" || code === "s0a00000";
+}
+
+function isAuthError(body, status) {
+    const code = responseCode(body);
+    return status === 401 || status === 403 || status === 419 ||
+        /^(?:-?401|-?403|1001)$/i.test(code) ||
+        /未登录|需要登录|登录.*(?:失效|过期|拒绝)|token.*(?:失效|过期|拒绝)|cookie.*(?:失效|过期|拒绝)|session.*(?:失效|过期|拒绝)|(?:鉴权|授权|认证).*(?:失败|失效|过期|拒绝|错误)/i.test(responseMessage(body));
+}
+
+function isAlreadySigned(body) {
+    const data = responseData(body);
+    const flags = [
+        body && body.isSignedToday,
+        body && body.signedToday,
+        body && body.isSignIn,
+        body && body.isSignin,
+        body && body.hasSignIn,
+        data && !Array.isArray(data) && data.isSignedToday,
+        data && !Array.isArray(data) && data.signedToday,
+        data && !Array.isArray(data) && data.isSignIn,
+        data && !Array.isArray(data) && data.isSignin,
+        data && !Array.isArray(data) && data.hasSignIn
+    ];
+    if (flags.some(booleanLike)) return true;
+
+    const text = responseMessage(body) + " " + safeString(body);
+    return /(?:今日|今天)[^。！？\n]{0,12}(?:已签|签到过|签到完成)|(?:已经|已)签到|重复签到|签到过|请明日再来/i.test(text);
+}
+
+function isAlreadyLottery(body) {
+    const data = responseData(body);
+    const flags = [
+        body && body.isDrawToday,
+        body && body.drawnToday,
+        body && body.isLotteryToday,
+        data && !Array.isArray(data) && data.isDrawToday,
+        data && !Array.isArray(data) && data.drawnToday,
+        data && !Array.isArray(data) && data.isLotteryToday
+    ];
+    if (flags.some(booleanLike)) return true;
+
+    const text = responseMessage(body) + " " + safeString(body);
+    return /(?:今日|今天)[^。！？\n]{0,12}(?:已抽|抽奖.*完成|抽奖过|已领取)|(?:已经|已)抽奖|重复抽奖|抽奖过/i.test(text);
+}
+
+function resultCodeText(body, status) {
+    const code = responseCode(body);
+    return "HTTP " + (status || 0) +
+        (code ? " code=" + code : "") +
+        "：" + responseMessage(body);
+}
+
+function signDescription(body) {
+    const data = responseData(body);
+    const result = body && body.result;
+    const values = [
+        result && !Array.isArray(result) && result.debrisDesc,
+        result && !Array.isArray(result) && result.signDesc,
+        data && !Array.isArray(data) && data.debrisDesc,
+        data && !Array.isArray(data) && data.signDesc,
+        body && body.rewardDesc
+    ];
+    for (let index = 0; index < values.length; index += 1) {
+        const text = String(values[index] || "").trim();
+        if (text) return text;
+    }
+    return "接口返回成功";
+}
+
+function lotteryItems(body) {
+    const data = responseData(body);
+    const candidates = [
+        body && body.result,
+        data,
+        data && !Array.isArray(data) && data.list,
+        data && !Array.isArray(data) && data.prizes,
+        data && !Array.isArray(data) && data.lotteryList,
+        data && !Array.isArray(data) && data.awards
+    ];
+    for (let index = 0; index < candidates.length; index += 1) {
+        if (Array.isArray(candidates[index])) return candidates[index];
+    }
+    return [];
+}
+
+function lotteryPrize(body) {
+    const data = responseData(body);
+    const direct = data && !Array.isArray(data) && (
+        data.prizeName || data.name || data.prizeDesc
+    );
+    if (direct) return String(direct);
+
+    const items = lotteryItems(body);
+    for (let index = 0; index < items.length; index += 1) {
+        const item = items[index] || {};
+        if (booleanLike(item.selected) || booleanLike(item.isSelected) ||
+            booleanLike(item.chosen) || booleanLike(item.choose)) {
+            return String(item.prizeName || item.name || item.prizeDesc || "中奖结果未命名");
+        }
+    }
+    return "";
+}
+
+function drawIndex() {
+    const configured = String($.getdata("adjd_draw") || "").trim();
+    if (/^[0-5]$/.test(configured)) return Number(configured);
+    return Math.floor(Math.random() * 6);
+}
+
+function stageResult(kind, detail, body, status) {
+    return {
+        kind: kind,
+        detail: detail || "",
+        code: responseCode(body),
+        status: status || 0
+    };
+}
+
+async function signIn(profile) {
+    const response = await requestApi("GET", SIGN_PATH, profile);
+    if (isAuthError(response.body, response.status)) {
+        return stageResult("auth", responseMessage(response.body), response.body, response.status);
+    }
+    if (isAlreadySigned(response.body)) {
+        return stageResult("already", responseMessage(response.body), response.body, response.status);
+    }
+    if (!isSuccess(response.body)) {
+        return stageResult("failed", resultCodeText(response.body, response.status), response.body, response.status);
+    }
+    return stageResult("success", signDescription(response.body), response.body, response.status);
+}
+
+async function lottery(profile) {
+    const response = await requestApi("POST", LOTTERY_PATH, profile, "code=" + drawIndex());
+    if (isAuthError(response.body, response.status)) {
+        return stageResult("auth", responseMessage(response.body), response.body, response.status);
+    }
+    if (isAlreadyLottery(response.body)) {
+        return stageResult("already", responseMessage(response.body), response.body, response.status);
+    }
+    if (!isSuccess(response.body)) {
+        return stageResult("failed", resultCodeText(response.body, response.status), response.body, response.status);
+    }
+
+    const prize = lotteryPrize(response.body);
+    if (!prize) {
+        return stageResult(
+            "failed",
+            "接口返回成功，但未找到中奖结果（可能接口结构已变化）",
+            response.body,
+            response.status
+        );
+    }
+    return stageResult("success", prize, response.body, response.status);
+}
+
+function errorDetail(error) {
+    const text = String(error && error.message ? error.message : error);
+    return text.length > 240 ? text.slice(0, 240) + "…" : text;
+}
+
+function signLine(result) {
+    if (result.kind === "already") return "签到：今日已签到";
+    return "签到：成功" + (result.detail ? "（" + result.detail + "）" : "");
+}
+
+function lotteryLine(result) {
+    if (result.kind === "already") return "抽奖：今日已抽奖";
+    return "抽奖：成功，奖品：" + result.detail;
+}
+
+async function runTask() {
+    const profile = readProfile();
+    const problems = profileProblems(profile);
+    if (problems.length) {
+        notify(
+            "未获取到Token/登录参数 ❌",
+            "缺少：" + problems.join("、") +
+            "\n请开启重写和 MitM，重新打开亚朵 App 的积分/签到页面"
+        );
+        finish();
+        return;
+    }
+
+    let signResult;
+    try {
+        signResult = await signIn(profile);
+    } catch (error) {
+        notify("签到失败 ❌", "原因：" + errorDetail(error) + "\n请先确认登录参数仍有效");
+        finish();
+        return;
+    }
+
+    if (signResult.kind === "auth") {
+        notify(
+            "Token已失效 ❌",
+            "签到接口拒绝请求：" + signResult.detail +
+            "\n请重新打开亚朵 App 的积分/签到页面抓取参数"
+        );
+        finish();
+        return;
+    }
+
+    if (signResult.kind === "failed") {
+        notify("签到失败 ❌", "原因：" + signResult.detail);
+        finish();
+        return;
+    }
+
+    let lotteryResult;
+    try {
+        lotteryResult = await lottery(profile);
+    } catch (error) {
+        lotteryResult = stageResult("failed", "原因：" + errorDetail(error), null, 0);
+    }
+
+    const signText = signLine(signResult);
+    if (lotteryResult.kind === "auth") {
+        notify(
+            signResult.kind === "already"
+                ? "今日已签到，但抽奖失败 ⚠️"
+                : "签到成功，但抽奖失败 ⚠️",
+            signText +
+            "\n抽奖：Token/登录状态失效" +
+            (lotteryResult.detail ? "（" + lotteryResult.detail + "）" : "") +
+            "\n请重新打开亚朵 App 的积分/签到页面抓取参数"
+        );
+        finish();
+        return;
+    }
+
+    if (lotteryResult.kind === "failed") {
+        notify(
+            signResult.kind === "already"
+                ? "今日已签到，但抽奖失败 ⚠️"
+                : "签到成功，但抽奖失败 ⚠️",
+            signText + "\n抽奖失败：" + lotteryResult.detail
+        );
+        finish();
+        return;
+    }
+
+    notify(
+        signResult.kind === "already" ? "今日已签到 ✅" : "签到成功 🎉",
+        signText + "\n" + lotteryLine(lotteryResult)
+    );
+    finish();
+}
+
+if (typeof $request !== "undefined" && $request && $request.url) {
+    captureProfile();
+} else {
+    runTask();
 }
 
 /** ---------------------------------固定不动区域----------------------------------------- */
