@@ -13,6 +13,7 @@
 | 库街区鸣潮游戏签到 | [`kurobbs_wuwa_signin.js`](./kurobbs_wuwa_signin.js) | [`kurobbs_wuwa_signin.conf`](./kurobbs_wuwa_signin.conf) |
 | TapTap鸣潮活动签到及礼包领取 | [`taptap_wuwa_signin.js`](./taptap_wuwa_signin.js) | [`taptap_wuwa_signin.conf`](./taptap_wuwa_signin.conf) |
 | 微博 App 超话签到（含鸣潮） | [`weibo_wuwa_supertopic_signin.js`](./weibo_wuwa_supertopic_signin.js)（兼容新旧接口） | [`weibo_wuwa_supertopic_signin.conf`](./weibo_wuwa_supertopic_signin.conf) |
+| 亚朵酒店 App 每日签到和抽奖 | [`yaduo_signin.js`](./yaduo_signin.js) | [`yaduo_signin.conf`](./yaduo_signin.conf) |
 
 ## 通用安装方法
 
@@ -29,6 +30,16 @@
 任务每天 08:05 运行，先调用签到记录接口。今日已经签到时只通知当前周期签到天数与积分；未签到时才提交签到，然后重新查询签到记录与积分进行确认。JWT 失效后重新打开未来荟小程序即可刷新，不需要为了抓取凭据重复点击签到按钮。
 
 本脚本使用的是当前未来荟接口 `wlhmobile.crland.com.cn`，不是旧版“春茧”接口 `program.springcocoon.com`。接口已于 2026-09-05 使用 iPhone 上的未来荟小程序实时验证。
+
+## 亚朵酒店签到（App 接口）
+
+合并 [`yaduo_signin.conf`](./yaduo_signin.conf)，开启 Quantumult X 的重写和 MitM，并确认已安装、信任 HTTPS 解密证书。
+
+首次获取参数时，暂时保留 `.conf` 中的 `script-request-header` 规则，然后打开亚朵酒店 App，进入“我的 → 积分/每日签到”，手动加载或签到一次。脚本会把签到请求的 URL 参数和请求头保存到 Quantumult X 本机的 `$prefs`，对应键名为 `adjd_url` 和 `adjd_header`；收到“获取签到Cookie成功”通知后，关闭这条抓取规则，保留定时任务。
+
+任务每天 08:08 运行：先请求签到接口，再执行一次六宫格抽奖。抽奖格默认随机选择 0–5；如需固定格子，可在 Quantumult X 持久化数据中设置 `adjd_draw` 为 `0` 到 `5`。首次安装或接口更新后，请先手动运行任务并以亚朵页面的积分/签到状态为准。
+
+本脚本来源于 [Sliverkiss 的 `adjd.js`](https://gist.githubusercontent.com/Sliverkiss/2e2093bfd5f524d58c8e90fed9beacfd/raw/e399523e428f3c173ec4b95c892725006c3128ff/adjd.js)，作者注释标注的是亚朵酒店 App，接口域名为 `miniapp.yaduo.com`。它不是专门验证过的微信小程序脚本；如果从微信小程序无法捕获同一请求，请不要把“参数获取成功”当作微信小程序可用。
 
 ## 华润通每日签到
 
