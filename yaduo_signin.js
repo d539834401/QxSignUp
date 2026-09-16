@@ -9,8 +9,9 @@
 2023.08.08 修复通知提示，新增抽奖任务
 
 Version: 2.0.0
-Updated: 2026-09-14
+Updated: 2026-09-16
 新增凭据校验、签到状态识别、分阶段失败通知。
+修复 OPTIONS 预检被误保存为签到参数，并补齐抽奖请求体。
 使用教程：
  1.合并 yaduo_signin.conf 中的 Quantumult X 配置
  2.打开亚朵酒店 App 的积分/签到页面并手动进入一次
@@ -67,11 +68,42 @@ function normalizeHeaders(headers) {
     return result;
 }
 
+function requestMethod() {
+    return String(($request && $request.method) || "GET").toUpperCase();
+}
+
+function hasFreshSignInHeaders(headers) {
+    const normalized = normalizeHeaders(headers);
+    const required = [
+        "at-client-code",
+        "at-client-sign",
+        "gentime",
+        "passtoken",
+        "captchaoutput",
+        "lotnumber"
+    ];
+    return required.every(function (key) {
+        const value = String(normalized[key] || "").trim();
+        return value && !/^(?:undefined|null|none)$/i.test(value);
+    });
+}
+
 function cleanQueryFromUrl(url) {
     const text = String(url || "").trim();
     const questionIndex = text.indexOf("?");
     if (questionIndex < 0) return "";
     return text.slice(questionIndex + 1).split("#")[0].replace(/^\?+/, "").trim();
+}
+
+function queryValue(query, name) {
+    const pattern = new RegExp("(?:^|&)" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "=([^&]*)", "i");
+    const match = String(query || "").match(pattern);
+    if (!match) return "";
+    try {
+        return decodeURIComponent(match[1].replace(/\+/g, " "));
+    } catch (error) {
+        return match[1];
+    }
 }
 
 function readStoredHeaders() {
@@ -119,6 +151,8 @@ function profileProblems(profile) {
         problems.push("请求头");
     } else if (!hasCredentialHint(profile.query, profile.headers)) {
         problems.push("Token/Cookie/Authorization");
+    } else if (!hasFreshSignInHeaders(profile.headers)) {
+        problems.push("Atour动态签名/极验参数");
     }
     return problems;
 }
@@ -130,6 +164,14 @@ function sameProfile(previous, current) {
 }
 
 function captureProfile() {
+    // 亚朵签到前会先发 CORS OPTIONS 预检。预检里虽然带有 URL token，
+    // 但没有真正签到所需的 At-Client-Sign 和极验参数，不能保存它。
+    if (requestMethod() !== "GET") {
+        console.log("[" + SCRIPT_NAME + "] 忽略非 GET 请求：" + requestMethod());
+        finish({});
+        return;
+    }
+
     const url = String($request && $request.url || "");
     const query = cleanQueryFromUrl(url);
     const headers = normalizeHeaders(($request && $request.headers) || {});
@@ -138,9 +180,9 @@ function captureProfile() {
 
     if (problems.length) {
         notify(
-            "未获取到Token/登录参数 ❌",
+            "未获取到真实签到参数 ❌",
             "本次请求缺少：" + problems.join("、") +
-            "\n请保持重写和 MitM 开启，重新进入亚朵 App 的积分/签到页面"
+            "\n请保持重写和 MitM 开启，完成验证后重新进入亚朵 App 的积分/签到页面"
         );
         finish({});
         return;
@@ -189,6 +231,20 @@ function requestApi(method, path, profile, extraQuery) {
             url: API_BASE + path + baseQuery + suffix,
             headers: requestHeaders(profile.headers)
         };
+
+        // 当前抓包中的抽奖 POST 会发送 JSON 请求体；仅重放 URL 和请求头
+        // 会让签到成功后的抽奖阶段返回业务错误。
+        if (String(method).toUpperCase() === "POST" && path === LOTTERY_PATH) {
+            const token = queryValue(profile.query, "token");
+            if (token) {
+                options.body = JSON.stringify({ token: token });
+                const hasContentType = Object.keys(options.headers || {}).some(function (key) {
+                    return String(key).toLowerCase() === "content-type";
+                });
+                if (!hasContentType) options.headers["content-type"] = "application/json";
+            }
+        }
+
         const callback = function (error, response, data) {
             if (error) {
                 reject(new Error("网络请求失败：" + String(error)));

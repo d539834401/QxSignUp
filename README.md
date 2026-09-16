@@ -35,7 +35,7 @@
 
 合并 [`yaduo_signin.conf`](./yaduo_signin.conf)，开启 Quantumult X 的重写和 MitM，并确认已安装、信任 HTTPS 解密证书。
 
-首次获取参数时，暂时保留 `.conf` 中的 `script-request-header` 规则，然后打开亚朵酒店 App，进入“我的 → 积分/每日签到”，手动加载或签到一次。脚本会校验请求中是否包含 URL 参数、请求头及 Token/Cookie/Authorization 等登录凭据，再保存到 Quantumult X 本机的 `$prefs`，对应键名为 `adjd_url` 和 `adjd_header`；收到“Token获取成功”通知后，关闭这条抓取规则，保留定时任务。
+首次获取参数时，暂时保留 `.conf` 中的 `script-request-header` 规则，然后打开亚朵酒店 App，进入“我的 → 积分/每日签到”，手动加载或签到一次。脚本会跳过 OPTIONS 预检，只保存带有真实 Atour 动态签名和极验参数的 GET 请求，再保存到 Quantumult X 本机的 `$prefs`，对应键名为 `adjd_url` 和 `adjd_header`；收到“Token获取成功”通知后，关闭这条抓取规则，保留定时任务。
 
 任务每天 08:08 运行。脚本会先执行签到接口，并按返回结果区分：
 
