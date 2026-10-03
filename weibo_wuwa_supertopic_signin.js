@@ -91,7 +91,7 @@ function isRequestMode() {
 }
 
 async function runTask() {
-    $.log('[版本] 微博超话 v20261003.2');
+    $.log('[版本] 微博超话 v20261003.3');
     if (!loadSettings()) return;
     if (!loadCookies()) return;
 
@@ -158,7 +158,7 @@ function captureRequest() {
 
     if (/\/2\/flowlist(?:[/?]|$)/i.test(url)) {
         const bodyLength = typeof $request.body === 'string' ? $request.body.length : 0;
-        $.log(`[捕获 v20261003.2] flowlist 已命中，method=${method} bodyType=${typeof $request.body} bodyLength=${bodyLength}`);
+        $.log(`[捕获 v20261003.3] flowlist 已命中，method=${method} bodyType=${typeof $request.body} bodyLength=${bodyLength}`);
         if (!bodyLength) {
             $.msg('微博超话', '已命中规则，但未读到请求体', '请确认列表规则使用 script-request-body，并刷新远程脚本缓存');
         } else if (!isFollowedFlowRequest(url, $request.body)) {
@@ -320,21 +320,45 @@ function loadCookies() {
         return false;
     }
 
-    if (!isFollowedFlowRequest($.listUrl, $.listBody) || !$.listBody) {
-        $.msg('微博超话', '需要重新获取新版关注列表', '请启用 flowlist 的 script-request-body 重写，再刷新超话关注列表');
-        return false;
-    }
-
     try {
         $.listHeaders = JSON.parse($.listHeadersStr);
         $.checkinHeaders = JSON.parse($.checkinHeadersStr);
         $.listMethod = String($.listMethod || 'POST').toUpperCase();
         $.checkinMethod = String($.checkinMethod || 'GET').toUpperCase();
+        if (!isFollowedFlowRequest($.listUrl, $.listBody) || !$.listBody) {
+            const template = migrateListTemplate($.listUrl, $.listHeaders);
+            if (!template) {
+                $.msg('微博超话', '需要重新获取新版关注列表', '请启用 flowlist 的 script-request-body 重写，再刷新超话关注列表');
+                return false;
+            }
+            $.listUrl = template.url;
+            $.listBody = template.body;
+            $.listHeaders = template.headers;
+            $.listMethod = 'POST';
+            $.listNeedsMigration = true;
+            $.log('[列表] 使用已有登录参数查询新版关注列表，查询成功后保存');
+        }
         return true;
     } catch (e) {
         $.msg('微博超话', '🚫 Cookie 解析失败', '请清空 cookie 后重新抓取');
         return false;
     }
+}
+
+// 迁移已有凭据，仅查询新版 flowlist，不调用已移除的旧列表接口。
+function migrateListTemplate(url, headers) {
+    const match = String(url || '').match(/^https?:\/\/m?api\.weibo\.c(?:n|om)\/2\/(?:statuses\/container_timeline_topic(?:sub|page)|cardlist)(?:\/)?\?(.+)$/i);
+    if (!match || !/(?:^|&)gsid=[^&]+/i.test(match[1])) return null;
+    const resultHeaders = cleanHeaders(headers);
+    Object.keys(resultHeaders).forEach((key) => {
+        if (/^(?:x[_-]validator|content-type)$/i.test(key)) delete resultHeaders[key];
+    });
+    resultHeaders['Content-Type'] = 'application/x-www-form-urlencoded; charset=utf-8';
+    return {
+        url: `https://api.weibo.cn/2/flowlist?${match[1]}`,
+        headers: resultHeaders,
+        body: 'containerid=232478_-_super_topic_followed&flowId=232478_-_super_topic_followed&flowVersion=0.0.1&pageDataType=feedStream&moduleID=commonpage&taskType=refresh&count=20',
+    };
 }
 
 function initState() {
@@ -383,6 +407,14 @@ function fetchTopicPage(sinceId) {
                     return;
                 }
                 const list = extractTopics(obj);
+                if ($.listNeedsMigration && Array.isArray(obj.items)) {
+                    saveData(KEY_LIST_URL, $.listUrl);
+                    saveData(KEY_LIST_HEADERS, JSON.stringify($.listHeaders));
+                    saveData(KEY_LIST_BODY, $.listBody);
+                    saveData(KEY_LIST_METHOD, 'POST');
+                    $.listNeedsMigration = false;
+                    $.log('[列表] 新版关注列表查询成功，已保存新请求模板');
+                }
                 $.log(`[列表] 解析到 ${list.length} 个超话`);
                 const nextSinceId = getNextSinceId(obj);
                 resolve({ list, nextSinceId: nextSinceId === '-1_1' ? '' : nextSinceId });
