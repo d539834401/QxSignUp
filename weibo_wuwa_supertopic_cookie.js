@@ -34,6 +34,17 @@ function main() {
     const url = String($request.url || '');
     const decodedUrl = decodeUrl(url);
 
+    if (/\/2\/flowlist(?:[/?]|$)/i.test(url)) {
+        const bodyLength = typeof $request.body === 'string' ? $request.body.length : 0;
+        $.log(`[捕获 v20261003.2] flowlist 已命中，method=${method} bodyType=${typeof $request.body} bodyLength=${bodyLength}`);
+        if (!bodyLength) {
+            $.msg('微博超话', '已命中规则，但未读到请求体', '请确认列表规则使用 script-request-body，并刷新远程脚本缓存');
+        } else if (!isFollowedFlowRequest(url, $request.body)) {
+            $.log('[捕获] 当前 flowlist 不含已关注超话标识，已忽略');
+        }
+    }
+
+
     if (isFollowedFlowRequest(url, $request.body)) {
         captureList(url, method);
         return;
