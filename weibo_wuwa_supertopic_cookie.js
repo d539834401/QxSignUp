@@ -2,8 +2,7 @@
  * 微博超话 · Quantumult X 请求抓取
  *
  * 仅用于抓取微博 APP 的关注超话列表请求和超话签到请求。
- * 由于 Quantumult X 对 script-request-header/body 脚本要求使用本地文件，
- * 请把本文件放到 Quantumult X 的 Scripts 目录，再在 rewrite_local 中引用文件名。
+ * 新版关注列表使用 flowlist，重写需使用 script-request-body 保存完整请求体。
  */
 
 const $ = new Env("微博超话");
@@ -35,7 +34,7 @@ function main() {
     const url = String($request.url || '');
     const decodedUrl = decodeUrl(url);
 
-    if (isNewListRequest(url) || isLegacyListRequest(decodedUrl)) {
+    if (isFollowedFlowRequest(url, $request.body)) {
         captureList(url, method);
         return;
     }
@@ -48,13 +47,17 @@ function main() {
     $.done();
 }
 
-function isNewListRequest(url) {
-    return /\/2\/statuses\/container_timeline_topic(?:sub|page)(?:[/?]|$)/i.test(url);
-}
-
-function isLegacyListRequest(url) {
-    if (!/\/2\/cardlist(?:[/?]|$)/i.test(url)) return false;
-    return /(?:myfollow|followsuper|need[_-]head[_-]cards|super(?:topic)?)/i.test(url);
+function isFollowedFlowRequest(url, body) {
+    if (!/\/2\/flowlist(?:[/?]|$)/i.test(url)) return false;
+    // flowlist 也用于其它页面；仅保存明确的已关注超话列表。
+    const fields = [String(url).split('?').slice(1).join('?'), String(body || '')].join('&').split('&');
+    return fields.some((field) => {
+        const index = field.indexOf('=');
+        if (index < 0) return false;
+        const key = decodeUrl(field.slice(0, index));
+        const value = decodeUrl(field.slice(index + 1));
+        return (key === 'flowId' || key === 'containerid') && value === '232478_-_super_topic_followed';
+    });
 }
 
 function isCheckinRequest(url, decodedUrl) {
@@ -65,11 +68,8 @@ function isCheckinRequest(url, decodedUrl) {
 
 function captureList(url, method) {
     try {
-        let body = String($request.body || '');
-        if (!body || body.length < 10) {
-            body = defaultListBody();
-            $.log('[INFO] 列表请求没有 body，使用兼容默认参数');
-        }
+        const body = String($request.body || '');
+        if (!body) throw new Error('未获取到列表请求体，请使用 script-request-body 并重新刷新关注列表');
 
         // 首次请求优先保存第一页；避免翻页请求覆盖掉第一页的模板。
         const oldUrl = $.getdata(KEY_LIST_URL) || '';
@@ -130,10 +130,6 @@ function captureCheckin(url, method) {
 
 function hasPageCursor(url, body) {
     return /(?:[?&]|%26)since_id(?:=|%3D)/i.test(url) || /(?:^|&)since_id=/i.test(body);
-}
-
-function defaultListBody() {
-    return 'filterGroupStyle=1&flowId=232478_-_mine_topic&flowVersion=0.0.1&lfid=profile_me&luicode=10000011&mix_media_enable=1&moduleID=pagecard&orifid=profile_me&oriuicode=10000011&pageDataType=flow&sg_tab_config=2&source_code=10000011_profile_me&taskType=refresh&uicode=10001387';
 }
 
 function save(key, value) {

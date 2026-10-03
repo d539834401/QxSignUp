@@ -12,7 +12,7 @@
 | 汽水音乐签到（实验版） | [`qishui_signin.js`](./qishui_signin.js) | [`qishui_signin.conf`](./qishui_signin.conf) |
 | 库街区鸣潮游戏签到 | [`kurobbs_wuwa_signin.js`](./kurobbs_wuwa_signin.js) | [`kurobbs_wuwa_signin.conf`](./kurobbs_wuwa_signin.conf) |
 | TapTap鸣潮活动签到及礼包领取 | [`taptap_wuwa_signin.js`](./taptap_wuwa_signin.js) | [`taptap_wuwa_signin.conf`](./taptap_wuwa_signin.conf) |
-| 微博 App 超话签到（含鸣潮） | [`weibo_wuwa_supertopic_signin.js`](./weibo_wuwa_supertopic_signin.js)（兼容新旧接口） | [`weibo_wuwa_supertopic_signin.conf`](./weibo_wuwa_supertopic_signin.conf) |
+| 微博 App 超话签到（含鸣潮） | [`weibo_wuwa_supertopic_signin.js`](./weibo_wuwa_supertopic_signin.js)（新版 flowlist 接口） | [`weibo_wuwa_supertopic_signin.conf`](./weibo_wuwa_supertopic_signin.conf) |
 | 亚朵酒店 App 每日签到和抽奖 | [`yaduo_signin.js`](./yaduo_signin.js) | [`yaduo_signin.conf`](./yaduo_signin.conf) |
 
 ## 通用安装方法
@@ -90,16 +90,16 @@ Token失效时，重新进入库街区 App 的鸣潮签到页即可刷新本地�
 
 ## 微博 App 超话签到（含鸣潮）
 
-本版本按近期微博 App 接口调整为双请求抓取模式：`weibo_wuwa_supertopic_signin.js` 负责抓取兼签到。它会自动签到账号已关注的所有超话（包括鸣潮），不依赖 Safari 的微博网页版 Cookie。由于微博接口使用 X-Validator 路径绑定，需要分别获取“关注列表”和“签到”两组请求信息。脚本同时兼容 `container_timeline_topicpage`、`container_timeline_topicsub` 和旧接口 `cardlist`；QX 重写规则对关注列表保留 `cardlist` 路径级兼容，但只匹配包含 `active_checkin` 的 `page/button` 请求，避免微博其它按钮请求反复启动脚本。定时签到会使用纯 `fid`，不会携带微博推荐流的 `_-_recommend` 标记，避免触发关注动作。
+本版本按近期微博 App 接口调整为双请求抓取模式：`weibo_wuwa_supertopic_signin.js` 负责抓取兼签到。它会自动签到账号已关注的所有超话（包括鸣潮），不依赖 Safari 的微博网页版 Cookie。由于微博接口使用 X-Validator 路径绑定，需要分别获取“关注列表”和“签到”两组请求信息。关注列表使用 `/2/flowlist`，仅保存请求参数 `flowId` 或 `containerid` 等于 `232478_-_super_topic_followed` 的请求；已移除 `container_timeline_topicpage/topicsub` 和 `cardlist` 捕获支持。签到捕获只匹配包含 `active_checkin` 的 `page/button` 请求。定时签到会使用纯 `fid`，不会携带微博推荐流的 `_-_recommend` 标记，避免触发关注动作。
 
-1. 保持 Quantumult X 接管网络，合并 [`weibo_wuwa_supertopic_signin.conf`](./weibo_wuwa_supertopic_signin.conf)，安装并信任 MitM 证书；如果之前添加过旧版微博规则，请先删除重复规则，最终只保留一条 `cardlist` 列表规则和一条仅匹配 `active_checkin` 的 `page/button` 规则。
-2. 临时开启重写后，在微博 App 进入“我的 → 超话社区 → 我的 → 关注”，等待“已捕获关注列表请求”通知。
+1. 保持 Quantumult X 接管网络，合并 [`weibo_wuwa_supertopic_signin.conf`](./weibo_wuwa_supertopic_signin.conf)，安装并信任 MitM 证书；如果之前添加过旧版微博规则，请先删除重复规则，最终只保留一条使用 `script-request-body` 的 `flowlist` 列表规则和一条仅匹配 `active_checkin` 的 `page/button` 规则。
+2. 临时开启重写后，在微博 App 进入“我的 → 超话社区 → 我的 → 关注”，下拉刷新，等待“已捕获关注列表请求”通知。
 3. 进入任意超话并手动签到一次，等待“已捕获超话签到请求”通知。若之前所有超话都已签到，可先关注一个新超话再手动签到。
 4. 抓取完成后关闭重写规则，保留定时任务；手动运行一次“微博·超话签到”测试，之后每天 08:00 自动执行。
 
-当前微博版本的关注列表请求体在 QX 中可能出现 `Failed to decode body`，因此配置对 `container_timeline_topicpage/topicsub` 使用 `script-request-header`，不依赖请求体解码；脚本会使用 URL、headers 和兼容默认参数保存列表请求。本次配置先恢复使用远程 Raw；如果 QX 仍没有执行请求重写，再将脚本下载到 `iCloud Drive/Quantumult X/Scripts/` 或“我的 iPhone/Quantumult X/Scripts/”，并把规则末尾改成本地文件名。
+新版关注列表标识位于 POST 请求体，必须使用 `script-request-body`；脚本保留真实请求体，不再使用旧版默认参数。升级时请同时更新 JS 和重写规则，并重新刷新关注列表；若本地仍保存旧接口凭据，任务会提示重新获取。若 QX 未执行远程请求重写，可将脚本下载到 `iCloud Drive/Quantumult X/Scripts/` 或“我的 iPhone/Quantumult X/Scripts/”，再把规则末尾改成本地文件名。
 
-如果仍然没有第一条通知，说明微博请求没有命中规则：请确认 MitM 中包含 `api.weibo.cn` 和 `mapi.weibo.com`，并检查微博请求是否经过 Quantumult X。若出现“已捕获关注列表请求”但没有第二条，必须在重写保持开启时真正点击超话页的“签到”按钮，而不是只打开超话页面。
+如果仍然没有第一条通知，请检查重写是否命中、脚本是否加载成功和系统通知权限：请确认 MitM 中包含 `api.weibo.cn` 和 `mapi.weibo.com`，并检查微博请求是否经过 Quantumult X。若出现“已捕获关注列表请求”但没有第二条，必须在重写保持开启时真正点击超话页的“签到”按钮，而不是只打开超话页面。
 
 如果抓取失败或 X-Validator 过期，清空 QX 本地持久化数据后重新完成以上两次抓取。关注超话较多时应降低执行频率，避免触发风控。
 

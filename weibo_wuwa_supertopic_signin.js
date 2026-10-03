@@ -14,22 +14,21 @@
  * [MITM]
  * hostname = api.weibo.cn
  * [Script]
- * http-request ^https:\/\/api\.weibo\.cn\/2\/(statuses\/container_timeline_topicsub|cardlist|page\/button) tag=微博超话 Cookie, script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js, requires-body=true, img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png
+ * http-request ^https:\/\/api\.weibo\.cn\/2\/(flowlist|page\/button) tag=微博超话 Cookie, script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js, requires-body=true, img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png
  * cron "0 8 * * *" script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js, tag=微博超话签到, img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png, enable=true
  *
  * ===== Surge =====
  * [MITM]
  * hostname = api.weibo.cn
  * [Script]
- * 微博超话 Cookie = type=http-request,pattern=^https:\/\/api\.weibo\.cn\/2\/(statuses\/container_timeline_topicsub|cardlist|page\/button),requires-body=true,max-size=0,script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js,img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png
+ * 微博超话 Cookie = type=http-request,pattern=^https:\/\/api\.weibo\.cn\/2\/(flowlist|page\/button),requires-body=true,max-size=0,script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js,img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png
  * 微博超话签到 = type=cron,cronexp=0 8 * * *,timeout=60,script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js,img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png
  *
  * ===== Quantumult X =====
  * [MITM]
  * hostname = api.weibo.cn, mapi.weibo.com
  * [rewrite_local]
- * ^https?:\/\/m?api\.weibo\.c(n|om)\/2\/statuses\/container_timeline_topic(?:sub|page)(?:[\/?].*)?$ url script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js
- * ^https?:\/\/m?api\.weibo\.c(n|om)\/2\/cardlist url script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js
+ * ^https?:\/\/m?api\.weibo\.c(n|om)\/2\/flowlist(?:[\/?].*)?$ url script-request-body https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js
  * ^https?:\/\/m?api\.weibo\.c(n|om)\/2\/page\/button.*active(?:_|%5f)checkin url script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js
  * [task_local]
  * 0 8 * * * https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js, tag=微博超话签到, img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png, enabled=true
@@ -44,7 +43,7 @@
  *   mitm:
  *     - "api.weibo.cn"
  *   script:
- *     - match: ^https:\/\/api\.weibo\.cn\/2\/(statuses\/container_timeline_topicsub|page\/button)
+ *     - match: ^https:\/\/api\.weibo\.cn\/2\/(flowlist|page\/button)
  *       name: 微博超话 Cookie
  *       type: request
  *       require-body: true
@@ -156,15 +155,12 @@ function captureRequest() {
     const url = String($request.url || '');
     const decodedUrl = decodeUrl(url);
 
-    // 兼容新旧微博 APP：新版本使用 topicsub，旧版本仍使用 cardlist。
-    if (isNewListRequest(url) || isLegacyListRequest(decodedUrl)) {
+    // 只捕获新版 flowlist 的已关注超话列表。
+    if (isFollowedFlowRequest(url, $request.body)) {
         try {
             const headers = $request.headers;
-            let body = String($request.body || '');
-            if (!body || body.length < 10) {
-                body = defaultListBody();
-                $.log('[INFO] 列表请求没有 body，使用兼容默认参数');
-            }
+            const body = String($request.body || '');
+            if (!body) throw new Error('未获取到列表请求体，请使用 script-request-body 并重新刷新关注列表');
 
             const oldUrl = $.getdata(KEY_LIST_URL) || '';
             const initial = !hasPageCursor(url, body) || /taskType=refresh/i.test(body);
@@ -226,19 +222,23 @@ function captureRequest() {
     finishScript();
 }
 
-function isNewListRequest(url) {
-    return /\/2\/statuses\/container_timeline_topic(?:sub|page)(?:[/?]|$)/i.test(url);
+function isFollowedFlowRequest(url, body) {
+    if (!/\/2\/flowlist(?:[/?]|$)/i.test(url)) return false;
+    // flowlist 也用于其它页面；仅保存明确的已关注超话列表。
+    const fields = [String(url).split('?').slice(1).join('?'), String(body || '')].join('&').split('&');
+    return fields.some((field) => {
+        const index = field.indexOf('=');
+        if (index < 0) return false;
+        const key = decodeUrl(field.slice(0, index));
+        const value = decodeUrl(field.slice(index + 1));
+        return (key === 'flowId' || key === 'containerid') && value === '232478_-_super_topic_followed';
+    });
 }
 
 function finishScript(value = {}) {
     if (doneCalled) return;
     doneCalled = true;
     $.done(value);
-}
-
-function isLegacyListRequest(url) {
-    if (!/\/2\/cardlist(?:[/?]|$)/i.test(url)) return false;
-    return /(?:myfollow|followsuper|need[_-]head[_-]cards|super(?:topic)?)/i.test(url);
 }
 
 function isCheckinRequest(url, decodedUrl) {
@@ -248,10 +248,6 @@ function isCheckinRequest(url, decodedUrl) {
 
 function hasPageCursor(url, body) {
     return /(?:[?&]|%26)since_id(?:=|%3D)/i.test(url) || /(?:^|&)since_id=/i.test(body);
-}
-
-function defaultListBody() {
-    return 'filterGroupStyle=1&flowId=232478_-_mine_topic&flowVersion=0.0.1&lfid=profile_me&luicode=10000011&mix_media_enable=1&moduleID=pagecard&orifid=profile_me&oriuicode=10000011&pageDataType=flow&sg_tab_config=2&source_code=10000011_profile_me&taskType=refresh&uicode=10001387';
 }
 
 function saveData(key, value) {
@@ -312,11 +308,16 @@ function loadCookies() {
         return false;
     }
 
+    if (!isFollowedFlowRequest($.listUrl, $.listBody) || !$.listBody) {
+        $.msg('微博超话', '需要重新获取新版关注列表', '请启用 flowlist 的 script-request-body 重写，再刷新超话关注列表');
+        return false;
+    }
+
     try {
         $.listHeaders = JSON.parse($.listHeadersStr);
         $.checkinHeaders = JSON.parse($.checkinHeadersStr);
-        $.listMethod = String($.listMethod || inferMethod($.listUrl, 'POST')).toUpperCase();
-        $.checkinMethod = String($.checkinMethod || inferMethod($.checkinUrl, 'GET')).toUpperCase();
+        $.listMethod = String($.listMethod || 'POST').toUpperCase();
+        $.checkinMethod = String($.checkinMethod || 'GET').toUpperCase();
         return true;
     } catch (e) {
         $.msg('微博超话', '🚫 Cookie 解析失败', '请清空 cookie 后重新抓取');
@@ -581,7 +582,7 @@ function checkin(fid, name) {
 }
 
 function buildCheckinRequest(fid) {
-    const method = String($.checkinMethod || inferMethod($.checkinUrl, 'GET')).toUpperCase();
+    const method = String($.checkinMethod || 'GET').toUpperCase();
     const plainFid = String(fid || '').replace(/_-_recommend$/i, '');
     let url = replaceTopicParam($.checkinUrl, 'fid', plainFid);
     url = replacePageId(url, plainFid);
@@ -613,10 +614,6 @@ function replacePageId(source, fid) {
     // request_url 里常见 pageid%3D，也兼容已解码的 pageid=。
     url = url.replace(/(pageid(?:%3D|=))1008[a-z0-9]{34}/gi, `$1${fid}`);
     return url;
-}
-
-function inferMethod(url, fallback) {
-    return /\/cardlist(?:[/?]|$)/i.test(String(url || '')) ? 'GET' : fallback;
 }
 
 function getMessage(r) {
