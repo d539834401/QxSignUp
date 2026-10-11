@@ -14,6 +14,7 @@
 | TapTap鸣潮活动签到及礼包领取 | [`taptap_wuwa_signin.js`](./taptap_wuwa_signin.js) | [`taptap_wuwa_signin.conf`](./taptap_wuwa_signin.conf) |
 | 微博 App 超话签到（含鸣潮） | [`weibo_wuwa_supertopic_signin.js`](./weibo_wuwa_supertopic_signin.js)（新版 flowlist 接口） | [`weibo_wuwa_supertopic_signin.conf`](./weibo_wuwa_supertopic_signin.conf) |
 | 亚朵酒店 App 每日签到和抽奖 | [`yaduo_signin.js`](./yaduo_signin.js) | [`yaduo_signin.conf`](./yaduo_signin.conf) |
+| 华住会 App/微信小程序每日签到 | [`huazhu_signin.js`](./huazhu_signin.js) | [`huazhu_signin.conf`](./huazhu_signin.conf) |
 
 ## 通用安装方法
 
@@ -47,6 +48,22 @@
 签到成功或当天已经签到后，脚本才会执行六宫格抽奖；抽奖结果单独报告为 `抽奖成功`、`今日已抽奖` 或 `抽奖失败`，不会把抽奖失败误报成签到失败。抽奖格默认随机选择 0–5；如需固定格子，可在 Quantumult X 持久化数据中设置 `adjd_draw` 为 `0` 到 `5`。当前这份公开脚本没有额外的独立状态查询，是否“今日已签到”以签到接口的返回字段或提示为准。首次安装或接口更新后，请先手动运行任务并以亚朵页面的积分/签到状态为准。
 
 本脚本来源于 [Sliverkiss 的 `adjd.js`](https://gist.githubusercontent.com/Sliverkiss/2e2093bfd5f524d58c8e90fed9beacfd/raw/e399523e428f3c173ec4b95c892725006c3128ff/adjd.js)，作者注释标注的是亚朵酒店 App，接口域名为 `miniapp.yaduo.com`。它不是专门验证过的微信小程序脚本；如果从微信小程序无法捕获同一请求，请不要把“参数获取成功”当作微信小程序可用。
+
+## 华住会每日签到
+
+本脚本将 [Dimlitter/huazhu-auto-checkin](https://github.com/Dimlitter/huazhu-auto-checkin) 的 Python HTTP 签到逻辑移植到 Quantumult X，使用 `appgw.huazhu.com/game/sign_in` 和 `/game/sign_header`。无需 Python、Docker 或 BoxJS。
+
+1. 合并 [`huazhu_signin.conf`](./huazhu_signin.conf)，开启重写和 MitM，安装并信任 HTTPS 解密证书。
+2. 打开华住会 App 或微信“华住会”小程序，登录并进入签到页。脚本只从命中请求的 Cookie 中读取 `userToken`，忽略 OPTIONS 预检。若 App 证书校验阻止抓取，请尝试微信小程序；登录请求中没有 `userToken` 时仍需进入签到页。
+3. 收到“Token获取成功”通知后关闭两条抓取规则，保留定时任务，在 QX 任务列表手动运行“华住会签到”。抓取本身只保存请求头，不主动调用签到接口。
+
+任务每天本地时间 **09:05** 运行。先查询当天状态，已经签到时只查询积分与累计天数；未签到才发起签到，然后再次查询确认。服务端未明确确认当日已签时会显示“结果待确认”，请核对 App/小程序状态。HTTP 401/403 或业务登录失效会提示重新抓取；其它业务失败、网络错误、限流和响应格式变化单独报告。此移植已通过模拟 QX 环境测试，**尚未使用真实华住会账号验证**；上游作者的实测不等于本移植已完成实机验证。
+
+单账号 Token 保存在本机 `$prefs` 的 `huazhu_signin_token`，User-Agent 保存在 `huazhu_signin_user_agent`。如需多个账号，可在 QX 本地持久化数据中设置 `huazhu_signin_tokens`，只填写各账号的 `userToken` 值，以 `&` 或换行分隔。多账号列表优先于自动抓取的单账号 Token；重新抓取不会覆盖手动列表。清空多账号键后恢复单账号模式。多账号按顺序运行，总时限约 45 秒，未执行完的账号会明确提示。
+
+服务器实际通过 `Set-Cookie` 续发 `userToken` 时，脚本会为对应账号保存新值；不会覆盖执行期间被用户或抓取脚本更新的凭据。没有续发 Cookie 时不会声称已续期，Token 过期仍需重新抓取。为适应 QX 任务时限，原版长时间错峰与重试改为最多一次短重试；`Retry-After` 要求等待超过 3 秒时留待下次运行。多账号请求关闭自动 Cookie 管理，建议使用支持 `opts.auto-cookie` 的 QX build 934 或更新版本。
+
+来源固定为上游提交 [`c4a4497`](https://github.com/Dimlitter/huazhu-auto-checkin/tree/c4a4497cbb52274cf1b2251f30342e447c48e08d)，华住会移植脚本遵循 GPL-3.0，保留原作者署名与 [许可证全文](./licenses/huazhu-GPL-3.0.txt)。测试命令：`node --test tests/huazhu_signin.test.js`。
 
 ## 华润通每日签到
 
@@ -136,6 +153,7 @@ Token失效时，重新进入库街区 App 的鸣潮签到页即可刷新本地�
 - 汽水音乐真实签到入口路径参考 [`BOBOLAOSHIV587/Rules`](https://github.com/BOBOLAOSHIV587/Rules/tree/main/JS/SodaMusic)，任务操作流程参考 [`miemiegy/fuckqishuishui-miemie`](https://github.com/miemiegy/fuckqishuishui-miemie)。
 - 库街区接口参考 [`yongyeym/AutoSign_QingLong`](https://github.com/yongyeym/AutoSign_QingLong/blob/main/kurobbs_sign.py) 与 [`TomyJan/Kuro-API-Collection`](https://github.com/TomyJan/Kuro-API-Collection/tree/master/API/encourage/signIn)。
 - 微博 App 超话脚本基于 [`MaYIHEI/paperclip/app/weibotalk`](https://github.com/MaYIHEI/paperclip/tree/main/app/weibotalk)，并保留其双请求抓取流程。
+- 华住会签到移植自 [`Dimlitter/huazhu-auto-checkin`](https://github.com/Dimlitter/huazhu-auto-checkin)，保留其 Cookie 鉴权、状态查询、多账号与服务器续发 Token 保存逻辑；QX 适配使用 `$task.fetch`、`$prefs` 和 `$notify`。
 
 ## 声明
 
