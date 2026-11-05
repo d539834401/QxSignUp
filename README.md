@@ -16,6 +16,7 @@
 | 亚朵酒店 App 每日签到和抽奖 | [`yaduo_signin.js`](./yaduo_signin.js) | [`yaduo_signin.conf`](./yaduo_signin.conf) |
 | 华住会 App/微信小程序每日签到 | [`huazhu_signin.js`](./huazhu_signin.js) | [`huazhu_signin.conf`](./huazhu_signin.conf) |
 | 小黑盒 iOS App 每日签到（待实机验证） | [`heybox_signin.js`](./heybox_signin.js) | [`heybox_signin.conf`](./heybox_signin.conf) |
+| 中国移动全国版 App 签到有礼（待实机验证） | [`cmcc_signin.js`](./cmcc_signin.js) | [`cmcc_signin.conf`](./cmcc_signin.conf) |
 
 ## 通用安装方法
 
@@ -24,6 +25,29 @@
 3. 在 Quantumult X 中生成、安装并信任 HTTPS 解密证书，开启重写和 MitM。
 4. 按下方说明获取一次登录凭据。
 5. 在 Quantumult X 的任务列表中手动运行对应任务进行测试。
+
+## 中国移动 App 签到有礼
+
+面向全国版中国移动 App 的 `mark31` 签到活动，按本仓库单文件抓取/定时双模式实现。每天设备本地时间 **08:23** 执行，签到日期按北京时间计算。凭据保存在本机 `$prefs`，不需要 Python、青龙、BoxJS 或远程签名服务。
+
+1. 打开 [`cmcc_signin.conf`](./cmcc_signin.conf)，配置中的脚本地址指向本仓库 `main` 分支，可直接使用远程脚本。
+2. 合并 [`cmcc_signin.conf`](./cmcc_signin.conf) 的三段，开启重写、MitM，安装并信任证书。把两个域名追加到现有 hostname 列表。
+3. **完全关闭并重新打开中国移动 App**，抓取原生 `autoLogin` 请求的加密登录模板；然后进入 **“签到有礼 / 签到领流量”**，抓取 `appTokenLogin` 登录请求。两次抓取都必须使用 `script-request-body`。只有“已保存部分参数”通知时，按通知补齐另一次抓取；进入页面不会由抓取脚本主动签到。
+4. 收到 **“参数获取完整”** 后，关闭两条抓取规则，保留定时任务，在 QX 中手动运行“中国移动签到”。首次如果 App 已经自动签到，当天只能验证状态查询，需次日先运行任务再打开 App 核对。
+
+如果 QX 无法加载远程脚本，可将 [`cmcc_signin.js`](./cmcc_signin.js) 保存到 `iCloud Drive/Quantumult X/Scripts/` 或“我的 iPhone/Quantumult X/Scripts/”，再将两条抓取规则和定时任务中的 JS 地址都改为本地文件名 `cmcc_signin.js`。
+
+任务先查询当天状态，未签到才提交一次，再次查询确认后才报告“签到已确认”。提交超时、5xx 或业务响应为 `SUCCESS` 均不会直接当作成功；无法查到已签记录时提示“结果待确认”，本次不重发。确认已签后，最多领取四项服务端列出的免费累计/连签奖励；单日奖品和累计奖励分别报告，领取异常不覆盖已确认的签到结果。设置本机持久化键 `cmcc_signin_claim_awards` 为 `false` 可关闭累计奖励代领。
+
+短期活动 Cookie 仅缓存 20 分钟。过期后用捕获的 App 票据重新换取活动会话；票据失效时，尝试用本人 App 的冷启动模板重新签名请求恢复会话，每次任务最多一次，并设置一分钟限流保护。没有冷启动模板时，仍可在票据有效期内运行，但失效后需要重新抓取。此恢复能力依据上游公开实测，不保证所有省份、设备和未来 App 版本长期有效。服务端提示其它设备会话占用时，需要本人在 App 重新登录后重新抓取。
+
+单账号配置键为 `cmcc_signin_profile_v1`，包含票据、设备模板、手机号和短期 Cookie；最近结果为 `cmcc_signin_status_v1`。切换手机号会替换旧账号参数，避免把两个号码的登录参数拼在一起。请勿公开这两个键。请求只发送到 `wx.10086.cn` 和 `client.app.coc.10086.cn`，关闭自动跳转与自动 Cookie 管理；建议使用支持 `opts.auto-cookie` 的 QX build 934 或更新版本。若 App 因证书校验而无法抓取，或 QX 无法与旧 TLS 网关握手，需要进一步实机诊断。
+
+**验证范围：离线模拟 QX、Node 标准密码库交叉验证，以及 2026-11-05 未登录 SSO 入口检查；尚未用真实账号在 iPhone/QX 完成签到。** 未登录入口确认仍使用 `appTokenLogin`，并下发 `enableJwtLogin=false`，因此没有采用旧版“JWT 可永久自动续期”的假设。
+
+接口资料参考 [`mli84/cmcc-auto-checkin @ a34f305e`](https://github.com/mli84/cmcc-auto-checkin/tree/a34f305eeb83b1327444f56fce434276e2c6d98c) 的 `cmcc_sign.py`、`cmcc_session.py`。本实现独立编写 JavaScript 请求、状态核验和密码学逻辑，不复制上游 Python 源码。测试：`node --test tests/cmcc_signin.test.js`。
+
+2026-11-05 选型记录：该仓库 10 月 26–30 日仍有会话恢复修复；原 `yupaiLy/cmcc-auto-checkin` 已归档，`1009394958/10086-checkin` 简介已标记“用不了”。`curtinp118/Scripthub` 虽有原生 QX 版本，但移动脚本最近修改为 5 月 31 日，采用短期活动 Cookie，不能仅凭整库近期更新判断长期可用。
 
 ## 未来荟每日签到
 
