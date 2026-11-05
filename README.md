@@ -68,7 +68,7 @@
 
 ## 小黑盒每日签到（iOS / QuanX）
 
-当前预览版本位于 `codex/heybox-quanx-signin` 分支，配置中的 Raw 地址固定指向该分支，合并前也能下载。脚本沿用本仓库的单文件抓取/定时双模式；不需要 Node.js、Docker、BoxJS 或第三方签名服务。
+配置中的 Raw 地址使用 `main` 主分支。脚本沿用本仓库的单文件抓取/定时双模式；不需要 Node.js、Docker、BoxJS 或第三方签名服务。
 
 1. 将 [`heybox_signin.conf`](./heybox_signin.conf) 合并到现有配置，开启重写与 MitM，安装并信任自己的证书。把 `api.xiaoheihe.cn` 追加到现有 hostname 列表，不要覆盖其它域名。
 2. 保持小黑盒 App 已登录，进入 **“我的 → 签到”**，等待“参数获取成功”通知。只需加载页面，抓取脚本不主动签到。只接受包含实际 `device_id`、黑盒 ID、App/系统版本和 `pkey` 的 iOS 请求；不会用虚构设备参数补全不完整请求。
