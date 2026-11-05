@@ -17,6 +17,7 @@
 | 华住会 App/微信小程序每日签到 | [`huazhu_signin.js`](./huazhu_signin.js) | [`huazhu_signin.conf`](./huazhu_signin.conf) |
 | 小黑盒 iOS App 每日签到（待实机验证） | [`heybox_signin.js`](./heybox_signin.js) | [`heybox_signin.conf`](./heybox_signin.conf) |
 | 中国移动全国版 App 签到有礼（待实机验证） | [`cmcc_signin.js`](./cmcc_signin.js) | [`cmcc_signin.conf`](./cmcc_signin.conf) |
+| 顺丰速运 App / 微信小程序每日签到（待实机验证） | [`sfexpress_signin.js`](./sfexpress_signin.js) | [`sfexpress_signin.conf`](./sfexpress_signin.conf) |
 
 ## 通用安装方法
 
@@ -25,6 +26,26 @@
 3. 在 Quantumult X 中生成、安装并信任 HTTPS 解密证书，开启重写和 MitM。
 4. 按下方说明获取一次登录凭据。
 5. 在 Quantumult X 的任务列表中手动运行对应任务进行测试。
+
+## 顺丰速运 App / 微信小程序每日签到
+
+采用本仓库单文件抓取/定时双模式，处理顺丰的 **新版签到日历** 和 **普通签到礼包** 两项独立活动。App 或微信“顺丰速运”小程序任选一个抓取，使用实际请求中的 Cookie、User-Agent、platform 和 channel，不需要 Python、青龙、BoxJS 或第三方取码服务。
+
+1. 将 [`sfexpress_signin.conf`](./sfexpress_signin.conf) 的 `[rewrite_local]`、`[task_local]`、`[mitm]` 三段合并到现有 QX 配置，追加 `mcs-mimp-web.sf-express.com`，开启重写与 MitM 并安装、信任证书。配置直接引用本仓库 `main` 的远程脚本。
+2. 登录顺丰速运 App 或微信“顺丰速运”小程序，进入 **“我的 → 积分 / 签到”** 页面。收到 **“参数获取成功”** 后关闭抓取规则，保留定时任务。抓取只保存参数，不主动请求签到；页面本身可能自动签到。
+3. 在 QX 中手动运行“顺丰速运签到”，随后在顺丰页面核对当天状态。之后每天设备本地时间 **08:35** 执行，脚本的签到日期按北京时间判断。首次抓取若页面已自动签到，需次日先运行任务再打开页面验证。
+
+新版日历先调用 `getTodaySign`：当天已签时跳过提交；未签才调用一次 `sign`，随后再查状态确认。`3400002` 已签到响应、提交超时或 `SUCCESS` 都不会替代最终状态核验。普通签到单独调用 `automaticSignFetchPackage`，按官方页面使用的 `hasFinishSign` 标志区分本次已签、当天已签和礼包待领；仅在明确待领时调用一次领取接口。这两项不是失败重试关系，不会在一条超时后改走另一条来重发同一签到。普通签到没有额外的独立状态查询，是否已签以明确返回标志为准；奖励是否到账以顺丰页面为准。
+
+通知分别显示两项结果和可查询到的积分余额。积分变化只表示两次查询之间的余额变化，可能包含期间其它操作，不声称全部来自本次签到。只完成一项时显示“部分签到已确认”；未知字段、非 JSON、网络超时、业务拒绝和登录失效分别处理。脚本只执行每日签到及其明确待领礼包，不包含寄件、邀请、浏览任务、积分兑换、蜂蜜或会员日抽奖。
+
+凭据键为本机 `$prefs` 的 `sfexpress_signin_profile_v1`；最近结果为 `sfexpress_signin_status_v1`。单账号抓取会完整替换旧参数，不合并不同账号的 Cookie。会话过期或重新打开小程序导致旧会话失效时，临时开启抓取并重新进入积分页即可更新；只有服务器实际返回 `Set-Cookie` 时才保存续发会话，不保证长期免维护。保存时会检查运行期间参数是否已被新抓取替换。不要公开上述本机数据。
+
+如果没有抓取通知，请确认相关请求经过 QX，且出现 `mcs-mimp-web.sf-express.com` 的登录或积分/签到接口；仅取得其它域名的登录数据不代表已取得本脚本所需会话。远程脚本加载失败时，可下载 [`sfexpress_signin.js`](./sfexpress_signin.js) 到 QX 的 `Scripts/`，再把抓取规则与任务中的 JS 地址都改为本地文件名。请求仅发往顺丰这一域名，关闭自动跳转和自动 Cookie 管理，建议 QX build 934 或更新版本。
+
+**验证范围：离线模拟 QX、MD5 与 Node 标准库交叉验证，以及 2026-11-05 顺丰公开页面/静态资源的协议核对；尚未使用真实账号在 iPhone/QX 验证登录、签到和到账。** 测试命令：`node --test tests/sfexpress_signin.test.js`。
+
+接口资料参考 [`yang7758258/ohhh_QL-Script @ 74fba0ca`](https://github.com/yang7758258/ohhh_QL-Script/blob/74fba0ca5619a4ec074492ceb7a8a7a2ca2facbc/sf_qinglong.js)（顺丰脚本最后修改 2026-11-01）、[`haoyu592/DSbox @ 6bc18d90`](https://github.com/haoyu592/DSbox/blob/6bc18d90cf05c30bb39b4bb638cc443594790474/Scripts/sfsy_sign.js)（最后修改 2026-10-30），以及[顺丰官方公开页面](https://mcs-mimp-web.sf-express.com/superWelfare)引用的前端资源。本脚本独立编写请求、抓取和状态判断，MD5 原语复用本仓库实现；未直接复制上述第三方脚本源码。
 
 ## 中国移动 App 签到有礼
 
