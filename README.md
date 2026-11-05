@@ -15,6 +15,7 @@
 | 微博 App 超话签到（含鸣潮） | [`weibo_wuwa_supertopic_signin.js`](./weibo_wuwa_supertopic_signin.js)（新版 flowlist 接口） | [`weibo_wuwa_supertopic_signin.conf`](./weibo_wuwa_supertopic_signin.conf) |
 | 亚朵酒店 App 每日签到和抽奖 | [`yaduo_signin.js`](./yaduo_signin.js) | [`yaduo_signin.conf`](./yaduo_signin.conf) |
 | 华住会 App/微信小程序每日签到 | [`huazhu_signin.js`](./huazhu_signin.js) | [`huazhu_signin.conf`](./huazhu_signin.conf) |
+| 小黑盒 iOS App 每日签到（待实机验证） | [`heybox_signin.js`](./heybox_signin.js) | [`heybox_signin.conf`](./heybox_signin.conf) |
 
 ## 通用安装方法
 
@@ -64,6 +65,29 @@
 服务器实际通过 `Set-Cookie` 续发 `userToken` 时，脚本会为对应账号保存新值；不会覆盖执行期间被用户或抓取脚本更新的凭据。没有续发 Cookie 时不会声称已续期，Token 过期仍需重新抓取。为适应 QX 任务时限，原版长时间错峰与重试改为最多一次短重试；`Retry-After` 要求等待超过 3 秒时留待下次运行。多账号请求关闭自动 Cookie 管理，建议使用支持 `opts.auto-cookie` 的 QX build 934 或更新版本。
 
 来源固定为上游提交 [`c4a4497`](https://github.com/Dimlitter/huazhu-auto-checkin/tree/c4a4497cbb52274cf1b2251f30342e447c48e08d)，华住会移植脚本遵循 GPL-3.0，保留原作者署名与 [许可证全文](./licenses/huazhu-GPL-3.0.txt)。测试命令：`node --test tests/huazhu_signin.test.js`。
+
+## 小黑盒每日签到（iOS / QuanX）
+
+配置中的 Raw 地址使用 `main` 主分支。脚本沿用本仓库的单文件抓取/定时双模式；不需要 Node.js、Docker、BoxJS 或第三方签名服务。
+
+1. 将 [`heybox_signin.conf`](./heybox_signin.conf) 合并到现有配置，开启重写与 MitM，安装并信任自己的证书。把 `api.xiaoheihe.cn` 追加到现有 hostname 列表，不要覆盖其它域名。
+2. 保持小黑盒 App 已登录，进入 **“我的 → 签到”**，等待“参数获取成功”通知。只需加载页面，抓取脚本不主动签到。只接受包含实际 `device_id`、黑盒 ID、App/系统版本和 `pkey` 的 iOS 请求；不会用虚构设备参数补全不完整请求。
+3. 收到通知后关闭这条抓取规则，保留定时任务，在 QuanX 任务列表手动运行“小黑盒签到”。之后每天设备本地时间 **08:20** 运行，判断“今天”和钱包日期统一使用北京时间。
+
+凭据保存在本机 `$prefs` 的 `heybox_signin_profile_v1`；最近结果保存在 `heybox_signin_status_v1`，包含 `signed`、`rewardConfirmed` 和日期。一个捕获配置对应一个账号，切换账号会替换配置。不要公开这两个键、Cookie 或请求截图。
+
+任务先查询当日状态和最近 30 条 H 币明细。已确认今天签到或已有“完成签到任务”入账时跳过提交；未签到才提交一次，随后轮询状态并再次核对流水。结果分别显示：
+
+- **签到成功**：已查到当日“完成签到任务”的正数 H 币入账；显示的是当天签到流水合计，不是承诺每次固定奖励。
+- **今日已签到**：已确认当日状态或入账，本次不重复提交；奖励未能核验时会单独说明。
+- **已签到，奖励待确认 / 签到结果待确认**：状态已签但没有确认入账，或提交后仍在处理中、超时、缺少日期、跨日。不会将这些结果记为成功；最近 30 条中没有签到明细也不能证明没有发奖。
+- **登录失效 / 签到未完成**：凭据过期、接口拒绝、限流或协议变化。登录失效后重新开启抓取并进入签到页，更新后关闭抓取规则。
+
+提交超时或上游 5xx 时只查询结果，不自动重发签到。全任务约 40 秒预算，所有请求仅发往 `api.xiaoheihe.cn`，关闭自动跳转和自动 Cookie 管理，不输出原始响应、URL 或凭据。建议使用支持 `opts.auto-cookie` 的 QX build 934 或更新版本。
+
+**验证范围：离线模拟 QuanX 和密码学测试，不包含真实账号签到。** iOS 签名参考 MaYIHEI 的 iOS 1.3.397 实现；新 App 版本仍需实机核对。首次应在当天尚未打开小黑盒、尚未签到时运行定时任务，再打开 App 核对签到天数及钱包入账；若为了首次抓取已经自动签到，需要到次日验证。当前仅处理签到，不包含分享、抽奖、领券和发帖。
+
+实现及纯 JS 密码学原语基于 [`MaYIHEI/paperclip @ f320e2ac`](https://github.com/MaYIHEI/paperclip/tree/f320e2ac257b2b713fecd1c66356667eaafb2948/app/heybox)，签到日期、轮询和钱包核验参考 [`Cansiny0320/heybox-daily @ 3e6f3bf`](https://github.com/Cansiny0320/heybox-daily/tree/3e6f3bf84b8d424093b4db834361dbbec3300b90)。保留 [MaYIHEI](./licenses/heybox-paperclip-MIT.txt)、[Cansiny0320](./licenses/heybox-cansiny-MIT.txt) 与 Web 签名原作者 [XiaHouSheng](./licenses/heybox-core-MIT.txt) 的 MIT 许可。测试：`node --test tests/heybox_signin.test.js`。
 
 ## 华润通每日签到
 
