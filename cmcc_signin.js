@@ -1,29 +1,30 @@
 /**
  * 中国移动 App「签到有礼」（Quantumult X）
  * Copyright (c) 2026 d539834401
- * Version: 20261105.1
+ * Version: 20261106.1
  *
  * 按公开接口资料独立实现（非 Python 源码复制）：
  * https://github.com/mli84/cmcc-auto-checkin/tree/a34f305eeb83b1327444f56fce434276e2c6d98c
  * 参考 cmcc_sign.py 的 mark31/SSO 协议、cmcc_session.py 的会话加密协议。
  *
- * 合并 cmcc_signin.conf，依次冷启动中国移动 App、进入「签到有礼」。
+ * 合并 cmcc_signin.conf，冷启动中国移动 App 捕获登录模板。
+ * 模板包含真实省市和版本字段时可直接运行，不依赖签到页再次触发 appTokenLogin。
  * 抓取只保存在本机 $prefs，不主动登录或签到；收到完整参数通知后关闭抓取规则。
- * 单账号；账号切换时清空旧账号参数，需重新完成两次抓取。
+ * 单账号；账号切换时清空旧账号参数，重新抓取本人登录模板。
  * 每日签到并领取免费累计/连签奖励；不包括其它活动。
  * 可设置 cmcc_signin_claim_awards=false 关闭累计奖励代领。
  * 已通过离线模拟 QX 和密码学测试，尚未使用真实账号在 iPhone 上验证。
  */
 
 const SCRIPT_NAME = "中国移动签到";
-const SCRIPT_VERSION = "20261105.1";
+const SCRIPT_VERSION = "20261106.1";
 const PROFILE_KEY = "cmcc_signin_profile_v1";
 const STATUS_KEY = "cmcc_signin_status_v1";
 const BASE = "https://wx.10086.cn";
 const ACTIVITY_URL = BASE + "/qwhdhub/qwhdmark/1021122301?channelId=P00000109876";
 const MARK_PATH = "/qwhdhub/api/mark/mark31/";
-const NATIVE_URL = /^https:\/\/client\.app\.coc\.10086\.cn\/biz-orange\/LN\/(?:uamonekeylogin|uamrandcodelogin)\/autoLogin$/;
-const SSO_URL = /^https:\/\/wx\.10086\.cn\/qwhdsso\/appTokenLogin\?sid=[^&#\s]+$/;
+const NATIVE_URL = /^https:\/\/client\.app\.coc\.10086\.cn\/biz-orange\/LN\/(?:uamonekeylogin|uamrandcodelogin)\/autoLogin(?:\?[^#\s]*)?$/;
+const SSO_URL = /^https:\/\/wx\.10086\.cn\/qwhdsso\/appTokenLogin(?:\?[^#\s]*)?$/;
 const BUDGET_MS = 50000;
 const REQUEST_MS = 6500;
 const REQ_KEY = "tVkdaRWRY0ZkV1Vr";
@@ -70,13 +71,18 @@ function phoneFromCheckId(value) {
   return /^1\d{10}$/.test(phone) ? phone : "";
 }
 
-function validSso(sso, phone) {
+function hasAppToken(token) {
+  return !!cleanHeader(token) && /(?:^|;\s*)JSESSIONID=[^;\s]+/.test(token);
+}
+
+function validSsoParameters(sso, phone) {
   return object(sso) && phoneFromCheckId(sso.userCheckId) === phone &&
-    !!cleanHeader(sso.token) && /(?:^|;\s*)JSESSIONID=[^;\s]+/.test(sso.token) &&
     /^\d{2,5}$/.test(sso.provinceCode) && /^\d{2,6}$/.test(sso.cityCode) &&
     /^\d{1,4}$/.test(sso.carrierOperator) && /^[\d.]{1,24}$/.test(sso.appVersionCode) &&
     !!cleanHeader(sso.userAgent);
 }
+
+function validSso(sso, phone) { return validSsoParameters(sso, phone) && hasAppToken(sso.token); }
 
 function validNative(native, phone) {
   if (!object(native) || !NATIVE_URL.test(native.url) || !cleanHeader(native.userAgent)) return false;
@@ -84,6 +90,40 @@ function validNative(native, phone) {
   return !!template && template.tel === phone && typeof template.xk === "string" &&
     /^[a-z0-9]{8,256}$/i.test(template.xk) && object(template.reqBody) &&
     typeof template.reqBody.cellNum === "string" && template.reqBody.cellNum.length > 20;
+}
+
+function completeSso(profile) {
+  // 保留真正捕获的 SSO 参数；只为缺少 SSO 的旧配置或冷启动模式补齐字段。
+  if (validSsoParameters(profile.sso, profile.phone) && profile.sso.source !== "native") return false;
+  if (!validNative(profile.native, profile.phone)) return false;
+  const template = parseObject(profile.native.plain);
+  const sso = {
+    token: hasAppToken(profile.native.cookie) ? profile.native.cookie : "",
+    userCheckId: Number(profile.phone).toString(16),
+    provinceCode: String(template.prov === undefined ? "" : template.prov),
+    cityCode: String(template.city === undefined ? "" : template.city),
+    // 002 是上游中国移动协议使用的运营商码；省、市、版本必须取自本人模板。
+    carrierOperator: String(template.carrierOperator === undefined ? "002" : template.carrierOperator),
+    appVersionCode: String(template.cv === undefined ? "" : template.cv),
+    userAgent: profile.native.userAgent, source: "native"
+  };
+  if (!validSsoParameters(sso, profile.phone) || JSON.stringify(profile.sso) === JSON.stringify(sso)) return false;
+  profile.sso = sso;
+  return true;
+}
+
+function runnable(profile) {
+  return validSsoParameters(profile.sso, profile.phone) && (hasAppToken(profile.sso.token) || validNative(profile.native, profile.phone));
+}
+
+function missingParameters(profile) {
+  if (!validNative(profile.native, profile.phone)) return "请更新抓取规则后冷启动中国移动 App，获取本人登录模板；也可进入签到页捕获登录请求。";
+  const t = parseObject(profile.native.plain), missing = [];
+  if (!/^\d{2,5}$/.test(String(t.prov === undefined ? "" : t.prov))) missing.push("省份码(prov)");
+  if (!/^\d{2,6}$/.test(String(t.city === undefined ? "" : t.city))) missing.push("城市码(city)");
+  if (!/^[\d.]{1,24}$/.test(String(t.cv === undefined ? "" : t.cv))) missing.push("App版本(cv)");
+  return missing.length ? "冷启动模板已保存，但缺少可用的" + missing.join("、") + "。请重新抓取冷启动或签到登录请求。"
+    : "登录参数不完整，请重新抓取本人冷启动模板或签到登录请求。";
 }
 
 function capture() {
@@ -115,25 +155,32 @@ function capture() {
 
   const previous = parseObject($prefs.valueForKey(PROFILE_KEY));
   const profile = previous && previous.version === 1 && previous.phone === phone ? previous : { version: 1, phone: phone };
-  const changed = JSON.stringify(profile[part]) !== JSON.stringify(value);
+  let changed = JSON.stringify(profile[part]) !== JSON.stringify(value);
   profile[part] = value;
+  if (completeSso(profile)) changed = true;
   // 登录票据变化时丢弃旧活动会话；无身份信息的活动 Cookie 不参与账号合并。
   if (changed) delete profile.session;
   if (!$prefs.setValueForKey(JSON.stringify(profile), PROFILE_KEY)) throw failure("capture", "本机参数保存失败，请检查 QX 持久化存储后重新抓取。");
-  const ready = validSso(profile.sso, phone) && validNative(profile.native, phone);
-  if (changed) $notify(SCRIPT_NAME, ready ? "参数获取完整 ✅" : "已保存部分参数", ready
-    ? "请关闭两条抓取规则，再手动运行签到任务。"
-    : part === "sso" ? "还需完全关闭并重新打开中国移动 App，抓取冷启动会话模板。"
-      : "还需进入中国移动 App 的「签到有礼」页，抓取签到登录参数。");
+  const ready = runnable(profile), nativeReady = validNative(profile.native, phone);
+  console.log("[中国移动] 已保存" + (part === "native" ? "冷启动模板" : "签到登录参数") + "；" + (ready ? "可运行任务" : "仍缺少必要字段"));
+  if (changed) $notify(SCRIPT_NAME, ready ? nativeReady ? "参数获取完整 ✅" : "登录参数可用 ✅" : "已保存部分参数", ready
+    ? nativeReady ? "请关闭抓取规则并直接运行签到任务；无需等待签到页再次触发登录请求。"
+      : "可直接运行签到；补抓冷启动模板后可在票据过期时恢复会话。"
+    : missingParameters(profile));
 }
 
 function loadAccount() {
   const raw = $prefs.valueForKey(PROFILE_KEY) || "";
   const profile = parseObject(raw);
-  if (!profile || profile.version !== 1 || !/^1\d{10}$/.test(profile.phone) || !validSso(profile.sso, profile.phone)) {
-    throw failure("config", "请开启抓取规则，冷启动中国移动 App 后进入「签到有礼」，获取登录参数。");
+  if (!profile || profile.version !== 1 || !/^1\d{10}$/.test(profile.phone)) {
+    throw failure("config", "请更新抓取规则后冷启动中国移动 App，获取登录参数。");
   }
-  return { profile: profile, snapshot: raw, refreshed: false };
+  const migrated = completeSso(profile);
+  if (!runnable(profile)) throw failure("config", missingParameters(profile));
+  const account = { profile: profile, snapshot: raw, refreshed: false };
+  if (migrated) saveAccount(account);
+  console.log("[中国移动] 参数来源：" + (profile.sso.source === "native" ? "冷启动模板" : "签到登录请求"));
+  return account;
 }
 
 function unchanged(account) { return ($prefs.valueForKey(PROFILE_KEY) || "") === account.snapshot; }
@@ -228,7 +275,12 @@ async function refreshNative(account) {
   saveAccount(account);
   const native = profile.native;
   const template = parseObject(native.plain);
-  const cookie = /(?:^|;\s*)JSESSIONID=[^;\s]+/.test(native.cookie || "") ? native.cookie : profile.sso.token;
+  let cookie = hasAppToken(native.cookie) ? native.cookie : profile.sso.token;
+  if (!hasAppToken(cookie)) {
+    // 冷启动可能还没有 Cookie。此值仅用于 x-sign 的随机会话占位，认证依靠本人加密模板。
+    const nonceId = md5(String(Date.now()) + "_" + String(Math.random()));
+    cookie = "JSESSIONID=" + nonceId.slice(0, 8) + "-" + nonceId.slice(8, 12) + "-" + nonceId.slice(12, 16) + "-" + nonceId.slice(16, 20) + "-" + nonceId.slice(20) + "; UID=placeholder";
+  }
   const jsid = cookie.match(/(?:^|;\s*)JSESSIONID=([^;\s]+)/)[1];
   const time = String(Date.now());
   const nonce = String(10000000 + Math.floor(Math.random() * 90000000));
@@ -262,6 +314,7 @@ async function refreshNative(account) {
 
 async function exchangeSession(account) {
   guardAccount(account);
+  if (!hasAppToken(account.profile.sso.token)) await refreshNative(account);
   const login = await timedFetch(BASE + "/qwhdsso/login?dlwmh=true&actUrl=" + encodeURIComponent(ACTIVITY_URL), "GET",
     { "User-Agent": account.profile.sso.userAgent, Accept: "text/html" });
   const match = String(login.body || "").match(/\bloginPath\s*=\s*['"](\/appTokenLogin\?sid=[a-z0-9._~-]+)['"]/i);

@@ -128,10 +128,10 @@ test("AES-CBC and MD5 agree with node:crypto, including UTF-8 and block boundari
 test("config uses request bodies and matches both supported autoLogin paths", () => {
   const rules = conf.split("\n").filter(line => line.startsWith("^"));
   assert.equal(rules.length, 2);
-  for (const url of [NATIVE, NATIVE.replace("uamonekeylogin", "uamrandcodelogin"), SSO]) {
+  for (const url of [NATIVE, NATIVE + "?source=cold", NATIVE.replace("uamonekeylogin", "uamrandcodelogin"), SSO, SSO + "&source=app", SSO.replace("?sid=", "?from=app&sid=")]) {
     assert.ok(rules.some(line => new RegExp(line.split(" url ")[0]).test(url)));
   }
-  const scriptUrl = "https://raw.githubusercontent.com/d539834401/QxSignUp/main/cmcc_signin.js";
+  const scriptUrl = "https://raw.githubusercontent.com/d539834401/QxSignUp/main/cmcc_signin.js?v=20261106.1";
   assert.ok(rules.every(line => line.endsWith("script-request-body " + scriptUrl)));
   assert.ok(conf.includes("23 8 * * * " + scriptUrl + ", tag=中国移动签到, enabled=true"));
   assert.match(conf, /hostname = %APPEND% client\.app\.coc\.10086\.cn wx\.10086\.cn/);
@@ -140,7 +140,8 @@ test("config uses request bodies and matches both supported autoLogin paths", ()
 test("capture assembles SSO and native templates without making network requests", async () => {
   const first = await execute({ request: { method: "POST", url: NATIVE, headers: { "User-Agent": UA, Cookie: TOKEN }, body: encrypt(JSON.stringify(template())) } });
   assert.equal(first.calls.length, 0);
-  assert.match(finalText(first), /还需进入/);
+  assert.match(finalText(first), /参数获取完整/);
+  assert.equal(JSON.parse(first.stored[PROFILE]).sso.source, "native");
   const second = await execute({ stored: first.stored, request: { method: "POST", url: SSO, headers: { "user-agent": UA }, body: JSON.stringify(sso()) } });
   assert.equal(second.calls.length, 0);
   assert.match(finalText(second), /参数获取完整/);
@@ -347,4 +348,102 @@ test("claim toggle and duplicate/path-injection award IDs are respected", async 
 test("unauthenticated or arbitrary response text never leaks to user output", async () => {
   const r = await execute({ stored: prefs({ cached: true }), responses: [response({ code: "ERROR", msg: "fixture-app-private; phone=" + PHONE })] });
   assert.match(finalText(r), /未确认成功/);
+});
+
+function nativeOnly({ cookie = TOKEN, tpl = template(), phone = PHONE, url = NATIVE } = {}) {
+  return { [PROFILE]: JSON.stringify({ version: 1, phone, native: { url, plain: JSON.stringify(tpl), userAgent: UA, cookie } }) };
+}
+function nativeSessionResponse() {
+  return response(encrypt(JSON.stringify({ retCode: "000000" }), RESPKEY), 200, { "set-cookie": ["JSESSIONID=fixture-restored; Path=/; HttpOnly", "UID=fixture-restored-uid; Path=/"] });
+}
+
+test("old partial profile runs from its existing native template without another SSO capture", async () => {
+  const r = await execute({ stored: nativeOnly(), responses: [...loginChain(), state(true)] });
+  assert.equal(r.calls.length, 4);
+  const body = JSON.parse(r.calls[1].body);
+  assert.equal(body.provinceCode, "270"); assert.equal(body.cityCode, "027");
+  assert.equal(body.appVersionCode, "12.5.5"); assert.equal(body.carrierOperator, "002");
+  assert.equal(body.userCheckId, Number(PHONE).toString(16)); assert.equal(body.token, TOKEN);
+  assert.equal(JSON.parse(r.stored[PROFILE]).sso.source, "native");
+  assert.match(finalText(r), /今日已签到/);
+});
+
+test("native bootstrap uses actual template region/version and never hard-codes the fixture region", async () => {
+  const tpl = { ...template(), prov: "731", city: "0731", cv: "12.6.1", carrierOperator: "002" };
+  const r = await execute({ stored: nativeOnly({ tpl }), responses: [...loginChain(), state(true)] });
+  const body = JSON.parse(r.calls[1].body);
+  assert.equal(body.provinceCode, "731"); assert.equal(body.cityCode, "0731"); assert.equal(body.appVersionCode, "12.6.1");
+});
+
+test("native-only profile with no Cookie establishes its own session before SSO", async () => {
+  const r = await execute({ stored: nativeOnly({ cookie: "" }), responses: [options => {
+    assert.equal(options.url, NATIVE);
+    assert.match(options.headers.Cookie, /^JSESSIONID=[a-f0-9-]+; UID=placeholder$/);
+    const jsid = options.headers.Cookie.match(/JSESSIONID=([^;]+)/)[1];
+    const h = options.headers;
+    assert.equal(h["x-sign"], md5(h["x-token"] + "_" + h["x-time"] + "_" + h["x-nonce"] + "_" + jsid));
+    assert.equal(decrypt(options.body), JSON.stringify(template()));
+    return nativeSessionResponse();
+  }, ...loginChain(), state(true)] });
+  assert.equal(r.calls.length, 5);
+  assert.equal(JSON.parse(r.calls[2].body).token, "JSESSIONID=fixture-restored; UID=fixture-restored-uid");
+  assert.match(finalText(r), /今日已签到/);
+});
+
+test("SSO expiry from a migrated native profile refreshes once and proceeds", async () => {
+  const chain = loginChain();
+  const r = await execute({ stored: nativeOnly(), responses: [chain[0], response({ code: "FAILED", msg: "APP登录状态已过期" }), nativeSessionResponse(), chain[1], chain[2], state(true)] });
+  assert.equal(r.calls.filter(c => c.url === NATIVE).length, 1);
+  assert.match(finalText(r), /今日已签到/);
+});
+
+for (const [field, expected] of [["prov", /省份码/], ["city", /城市码/], ["cv", /App版本/]]) {
+  test("incomplete native metadata names the missing field and does not invent a default: " + field, async () => {
+    const tpl = template(); delete tpl[field];
+    const stored = nativeOnly({ tpl }); const r = await execute({ stored });
+    assert.equal(r.calls.length, 0); assert.match(finalText(r), expected);
+    assert.equal(r.stored[PROFILE], stored[PROFILE]);
+  });
+}
+
+test("a template for another phone cannot bootstrap the stored account", async () => {
+  const stored = nativeOnly({ tpl: template(PHONE2) });
+  const r = await execute({ stored });
+  assert.equal(r.calls.length, 0); assert.equal(r.stored[PROFILE], stored[PROFILE]);
+});
+
+test("explicit SSO parameters take precedence over template-derived metadata", async () => {
+  const p = profile(); p.sso.provinceCode = "731"; p.sso.cityCode = "0731";
+  const r = await execute({ stored: { [PROFILE]: JSON.stringify(p) }, responses: [...loginChain(), state(true)] });
+  assert.equal(JSON.parse(r.calls[1].body).provinceCode, "731");
+  assert.equal(JSON.parse(r.calls[1].body).cityCode, "0731");
+});
+
+test("re-capturing an identical old partial template emits the new ready notification", async () => {
+  const r = await execute({ stored: nativeOnly(), request: { method: "POST", url: NATIVE, headers: { "User-Agent": UA, Cookie: TOKEN }, body: encrypt(JSON.stringify(template())) } });
+  assert.equal(r.calls.length, 0); assert.match(finalText(r), /参数获取完整/);
+  assert.match(finalText(r), /无需等待签到页/);
+});
+
+test("native profile migration storage failure is reported before any network request", async () => {
+  const stored = nativeOnly(); const r = await execute({ stored, writable: false });
+  assert.equal(r.calls.length, 0); assert.equal(r.stored[PROFILE], stored[PROFILE]); assert.match(finalText(r), /保存失败/);
+});
+
+test("native URLs with query parameters preserve the path in the signed token", async () => {
+  const url = NATIVE + "?source=cold";
+  const r = await execute({ stored: nativeOnly({ cookie: "", url }), responses: [options => {
+    assert.equal(options.url, url);
+    const h = options.headers;
+    assert.equal(h.xs, md5(url + "_" + JSON.stringify(template()) + "_Leadeon/SecurityOrganization"));
+    assert.ok(decrypt(h["x-token"], "bAIgvwAuA4tbDr9d", "9791027341711819").includes("/autoLogin?source=cold_"));
+    return nativeSessionResponse();
+  }, ...loginChain(), state(true)] });
+  assert.match(finalText(r), /今日已签到/);
+});
+
+test("SSO capture accepts sid after other query parameters without making requests", async () => {
+  const r = await execute({ request: { method: "POST", url: "https://wx.10086.cn/qwhdsso/appTokenLogin?from=app&sid=fixture-sid&extra=1", headers: { "User-Agent": UA }, body: JSON.stringify(sso()) } });
+  assert.equal(r.calls.length, 0); assert.match(finalText(r), /登录参数可用/);
+  assert.equal(JSON.parse(r.stored[PROFILE]).sso.token, TOKEN);
 });
