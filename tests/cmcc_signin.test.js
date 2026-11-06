@@ -131,7 +131,7 @@ test("config uses request bodies and matches both supported autoLogin paths", ()
   for (const url of [NATIVE, NATIVE + "?source=cold", NATIVE.replace("uamonekeylogin", "uamrandcodelogin"), SSO, SSO + "&source=app", SSO.replace("?sid=", "?from=app&sid=")]) {
     assert.ok(rules.some(line => new RegExp(line.split(" url ")[0]).test(url)));
   }
-  const scriptUrl = "https://raw.githubusercontent.com/d539834401/QxSignUp/main/cmcc_signin.js?v=20261106.1";
+  const scriptUrl = "https://raw.githubusercontent.com/d539834401/QxSignUp/master/cmcc_signin.js?v=20261106.1";
   assert.ok(rules.every(line => line.endsWith("script-request-body " + scriptUrl)));
   assert.ok(conf.includes("23 8 * * * " + scriptUrl + ", tag=中国移动签到, enabled=true"));
   assert.match(conf, /hostname = %APPEND% client\.app\.coc\.10086\.cn wx\.10086\.cn/);
