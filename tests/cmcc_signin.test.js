@@ -131,7 +131,7 @@ test("config uses request bodies and matches both supported autoLogin paths", ()
   for (const url of [NATIVE, NATIVE + "?source=cold", NATIVE.replace("uamonekeylogin", "uamrandcodelogin"), SSO, SSO + "&source=app", SSO.replace("?sid=", "?from=app&sid=")]) {
     assert.ok(rules.some(line => new RegExp(line.split(" url ")[0]).test(url)));
   }
-  const scriptUrl = "https://raw.githubusercontent.com/d539834401/QxSignUp/master/cmcc_signin.js?v=20261106.1";
+  const scriptUrl = "https://raw.githubusercontent.com/d539834401/QxSignUp/master/cmcc_signin.js?v=20261106.2";
   assert.ok(rules.every(line => line.endsWith("script-request-body " + scriptUrl)));
   assert.ok(conf.includes("23 8 * * * " + scriptUrl + ", tag=中国移动签到, enabled=true"));
   assert.match(conf, /hostname = %APPEND% client\.app\.coc\.10086\.cn wx\.10086\.cn/);
@@ -446,4 +446,58 @@ test("SSO capture accepts sid after other query parameters without making reques
   const r = await execute({ request: { method: "POST", url: "https://wx.10086.cn/qwhdsso/appTokenLogin?from=app&sid=fixture-sid&extra=1", headers: { "User-Agent": UA }, body: JSON.stringify(sso()) } });
   assert.equal(r.calls.length, 0); assert.match(finalText(r), /登录参数可用/);
   assert.equal(JSON.parse(r.stored[PROFILE]).sso.token, TOKEN);
+});
+
+test("native-derived web requests include the required marker and avoid the reproduced bind-page redirect", async () => {
+  const chain = loginChain();
+  const r = await execute({ stored: nativeOnly(), responses: [options => {
+    // 复现线上入口规则：原生 UA 返回 302；携带 leadeon 标识才返回 sid 表单。
+    if (!options.headers["User-Agent"].includes("leadeon/")) return response("", 302, { Location: "https://wx.10086.cn/website/bind/bindAccount/new?token=fixture-activity-private" });
+    return chain[0];
+  }, chain[1], chain[2], state(true)] });
+  assert.match(finalText(r), /今日已签到/);
+  for (const call of r.calls) assert.equal(call.headers["User-Agent"], UA + " leadeon/12.5.5/CMCCIT");
+});
+
+test("an actual captured WebView UA is preserved without adding another marker", async () => {
+  const p = profile(); p.sso.userAgent = "Mozilla/5.0 fixture leadeon/12.5.5/CMCCIT";
+  const r = await execute({ stored: { [PROFILE]: JSON.stringify(p) }, responses: [...loginChain(), state(true)] });
+  for (const call of r.calls) assert.equal(call.headers["User-Agent"], p.sso.userAgent);
+});
+
+test("native session recovery keeps the real native UA while web requests use the WebView marker", async () => {
+  const r = await execute({ stored: nativeOnly({ cookie: "" }), responses: [options => {
+    assert.equal(options.headers["User-Agent"], UA);
+    return nativeSessionResponse();
+  }, ...loginChain(), state(true)] });
+  assert.match(finalText(r), /今日已签到/);
+  for (const call of r.calls.slice(1)) assert.equal(call.headers["User-Agent"], UA + " leadeon/12.5.5/CMCCIT");
+});
+
+for (const [label, stored, responses, expected] of [
+  ["login redirect", prefs(), [response("", 302, { Location: "https://wx.10086.cn/website/bind/bindAccount/new?token=fixture-activity-private" })], /\[登录入口\] HTTP 302/],
+  ["native request", nativeOnly({ cookie: "" }), [response("", 400)], /\[App会话恢复\] HTTP 400/],
+  ["SSO request", prefs(), [loginChain()[0], response("", 415)], /\[签到登录\] HTTP 415/],
+  ["status query", prefs({ cached: true }), [response("", 404)], /\[查询签到状态\] HTTP 404/],
+  ["missing status", prefs({ cached: true }), [{ body: "fixture-access-private" }], /\[查询签到状态\] HTTP 未知/]
+]) test("HTTP diagnostics identify only the fixed stage and status: " + label, async () => {
+  const r = await execute({ stored, responses });
+  assert.match(finalText(r), expected);
+  assert.equal(r.calls.length, responses.length);
+  assert.ok(!JSON.stringify({ notices: r.notices, logs: r.logs }).includes("fixture-access-private"));
+  assert.ok(!JSON.stringify(r.logs).includes("https://"));
+});
+
+test("a sign POST redirect is not followed or retried and the returned Location stays private", async () => {
+  const r = await execute({ stored: prefs({ cached: true }), responses: [state(false), response("", 302, { Location: "https://example.com/?token=fixture-app-private" }), state(false)] });
+  assert.equal(r.calls.length, 3);
+  assert.equal(r.calls.filter(c => c.url.endsWith("domark")).length, 1);
+  assert.match(finalText(r), /\[提交签到\] HTTP 302/);
+});
+
+test("an activity page may issue a session Cookie with a redirect without following it", async () => {
+  const chain = loginChain();
+  const r = await execute({ stored: prefs(), responses: [chain[0], chain[1], response("", 302, { "Set-Cookie": "QWHD_SESSION_TOKEN=fixture-session-private; Path=/", Location: "/qwhdhub/qwhdmark/1021122301?token=fixture-activity-private" }), state(true)] });
+  assert.equal(r.calls.length, 4); assert.match(finalText(r), /今日已签到/);
+  assert.ok(r.logs.includes("[中国移动] 活动页面 HTTP 302"));
 });

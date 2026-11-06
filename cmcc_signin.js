@@ -1,7 +1,7 @@
 /**
  * 中国移动 App「签到有礼」（Quantumult X）
  * Copyright (c) 2026 d539834401
- * Version: 20261106.1
+ * Version: 20261106.2
  *
  * 按公开接口资料独立实现（非 Python 源码复制）：
  * https://github.com/mli84/cmcc-auto-checkin/tree/a34f305eeb83b1327444f56fce434276e2c6d98c
@@ -17,7 +17,7 @@
  */
 
 const SCRIPT_NAME = "中国移动签到";
-const SCRIPT_VERSION = "20261106.1";
+const SCRIPT_VERSION = "20261106.2";
 const PROFILE_KEY = "cmcc_signin_profile_v1";
 const STATUS_KEY = "cmcc_signin_status_v1";
 const BASE = "https://wx.10086.cn";
@@ -196,34 +196,51 @@ function saveAccount(account) {
   account.snapshot = raw;
 }
 
+function requestStage(url) {
+  if (NATIVE_URL.test(url)) return "App会话恢复";
+  const path = String(url).split("?")[0];
+  if (path === BASE + "/qwhdsso/login") return "登录入口";
+  if (path === BASE + "/qwhdsso/appTokenLogin") return "签到登录";
+  if (path === BASE + "/qwhdhub/qwhdmark/1021122301") return "活动页面";
+  if (path === BASE + MARK_PATH + "markstatus") return "查询签到状态";
+  if (path === BASE + MARK_PATH + "domark") return "提交签到";
+  if (path.indexOf(BASE + MARK_PATH + "taskAward/") === 0) return "领取累计奖励";
+  return "移动接口";
+}
+
 function timedFetch(url, method, headers, body, acceptsRedirect) {
+  const stage = requestStage(url);
   const allowed = url.indexOf(BASE + "/") === 0 || NATIVE_URL.test(url);
-  if (!allowed || /[\s#]/.test(url)) return Promise.reject(failure("protocol", "接口跳转地址不符合当前活动配置。"));
+  if (!allowed || /[\s#]/.test(url)) return Promise.reject(failure("protocol", "[" + stage + "] 接口跳转地址不符合当前活动配置。"));
   const timeout = Math.min(REQUEST_MS, deadline - Date.now());
-  if (timeout < 800) return Promise.reject(failure("budget", "任务时间不足，请稍后手动运行。"));
+  if (timeout < 800) return Promise.reject(failure("budget", "[" + stage + "] 任务时间不足，请稍后手动运行。"));
   const options = { url: url, method: method, headers: headers, opts: { redirection: false, "auto-cookie": false } };
   if (body !== undefined) options.body = body;
   return new Promise(function (resolve, reject) {
     let settled = false;
     const timer = setTimeout(function () {
-      if (!settled) { settled = true; reject(failure("network", "请求超时，请在 App 核对结果后重试。")); }
+      if (!settled) { settled = true; reject(failure("network", "[" + stage + "] 请求超时，请在 App 核对结果后重试。")); }
     }, timeout);
     Promise.resolve().then(function () { return $task.fetch(options); }).then(function (response) {
       if (settled) return;
       settled = true;
       if (typeof clearTimeout === "function") clearTimeout(timer);
-      const code = Number(response.statusCode);
-      if (code === 401) reject(failure("auth", "登录状态已过期，请重新抓取登录参数。"));
-      else if (code === 403) reject(failure("denied", "服务端拒绝请求，请检查抓取参数、网络出口或 App 协议变化。"));
-      else if (code === 429) reject(failure("limited", "服务端限流，请稍后再试。"));
-      else if (code >= 500) reject(failure("server", "中国移动服务暂不可用，请稍后再试。"));
-      else if (!(code >= 200 && code < 300) && !(acceptsRedirect && code >= 300 && code < 400)) reject(failure("protocol", "接口返回异常 HTTP 状态，请在 App 核对。"));
-      else resolve(response);
+      const code = Number(response && response.statusCode);
+      const status = code >= 100 && code <= 599 && /^\d{3}$/.test(String(code)) ? String(code) : "未知";
+      const prefix = "[" + stage + "] HTTP " + status + "：";
+      // 只记录固定步骤名和状态码，不输出 URL、Location、Cookie 或原始响应。
+      console.log("[中国移动] " + stage + " HTTP " + status);
+      if (code === 401) reject(failure("auth", prefix + "登录状态已过期，请重新抓取登录参数。"));
+      else if (code === 403) reject(failure("denied", prefix + "服务端拒绝请求，请检查抓取参数、网络出口或 App 协议变化。"));
+      else if (code === 429) reject(failure("limited", prefix + "服务端限流，请稍后再试。"));
+      else if (code >= 500) reject(failure("server", prefix + "中国移动服务暂不可用，请稍后再试。"));
+      else if (!(code >= 200 && code < 300) && !(acceptsRedirect && code >= 300 && code < 400)) reject(failure("protocol", prefix + "接口返回异常 HTTP 状态，请在 App 核对。"));
+      else resolve(Object.assign({}, response, { cmccRequestStage: stage }));
     }, function () {
       if (settled) return;
       settled = true;
       if (typeof clearTimeout === "function") clearTimeout(timer);
-      reject(failure("network", "网络请求失败，请检查 QX 网络连接。"));
+      reject(failure("network", "[" + stage + "] 网络请求失败，请检查 QX 网络连接。"));
     });
   });
 }
@@ -250,17 +267,24 @@ function authError(body) {
 }
 
 function jsonResponse(response) {
+  const prefix = "[" + (response.cmccRequestStage || "移动接口") + "] ";
   const body = parseObject(response.body);
-  if (!body) throw failure("protocol", "接口未返回预期 JSON 对象，请稍后重试或检查协议更新。");
+  if (!body) throw failure("protocol", prefix + "接口未返回预期 JSON 对象，请稍后重试或检查协议更新。");
   if (body.code !== "SUCCESS") {
-    if (authError(body)) throw failure("auth", "登录状态已过期，请重新抓取登录参数。");
-    throw failure("business", "活动接口未确认成功，请打开 App 查看活动提示。");
+    if (authError(body)) throw failure("auth", prefix + "登录状态已过期，请重新抓取登录参数。");
+    throw failure("business", prefix + "活动接口未确认成功，请打开 App 查看活动提示。");
   }
   return body;
 }
 
+function webUserAgent(account) {
+  const sso = account.profile.sso;
+  // SSO 入口会把没有 leadeon 标识的原生 UA 重定向到绑定页。保留捕获值，只补协议标识。
+  return sso.userAgent.indexOf("leadeon/") >= 0 ? sso.userAgent : sso.userAgent + " leadeon/" + sso.appVersionCode + "/CMCCIT";
+}
+
 function webHeaders(account, referer, cookie) {
-  return { "User-Agent": account.profile.sso.userAgent, Accept: "*/*", "Content-Type": "application/json;charset=UTF-8",
+  return { "User-Agent": webUserAgent(account), Accept: "*/*", "Content-Type": "application/json;charset=UTF-8",
     Origin: BASE, Referer: referer, "login-check": "1", "x-requested-with": "XMLHttpRequest", Cookie: cookie || "" };
 }
 
@@ -316,7 +340,7 @@ async function exchangeSession(account) {
   guardAccount(account);
   if (!hasAppToken(account.profile.sso.token)) await refreshNative(account);
   const login = await timedFetch(BASE + "/qwhdsso/login?dlwmh=true&actUrl=" + encodeURIComponent(ACTIVITY_URL), "GET",
-    { "User-Agent": account.profile.sso.userAgent, Accept: "text/html" });
+    { "User-Agent": webUserAgent(account), Accept: "text/html" });
   const match = String(login.body || "").match(/\bloginPath\s*=\s*['"](\/appTokenLogin\?sid=[a-z0-9._~-]+)['"]/i);
   if (!match) throw failure("protocol", "登录中转页未提供预期 sid；活动入口可能已更新。");
   const url = BASE + "/qwhdsso" + match[1];
@@ -337,7 +361,7 @@ async function exchangeSession(account) {
   if (typeof destination !== "string" || !/^https:\/\/wx\.10086\.cn\/qwhdhub\/qwhdmark\/1021122301\?[^#\s]+$/.test(destination)) {
     throw failure("protocol", "登录返回了不同的活动地址，请检查签到活动是否已改版。");
   }
-  const page = await timedFetch(destination, "GET", { "User-Agent": account.profile.sso.userAgent, Accept: "text/html" }, undefined, true);
+  const page = await timedFetch(destination, "GET", { "User-Agent": webUserAgent(account), Accept: "text/html" }, undefined, true);
   const cookies = cookieMap(header(page.headers, "set-cookie"));
   if (!cookies.QWHD_SESSION_TOKEN) throw failure("auth", "活动页未下发签到会话，请在 App 重新进入签到页抓取。");
   const session = { cookie: "QWHD_SESSION_TOKEN=" + cookies.QWHD_SESSION_TOKEN, referer: destination, createdAt: Date.now() };
