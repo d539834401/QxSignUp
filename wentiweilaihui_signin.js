@@ -10,10 +10,10 @@
  * 将以下内容加入 Quantumult X 配置：
  *
  * [rewrite_local]
- * ^https:\/\/wlhmobile\.crland\.com\.cn\/(?:business\/client\/card\/detail|member\/client\/detail)(?:\?.*)?$ url script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/main/wentiweilaihui_signin.js
+ * ^https:\/\/wlhmobile\.crland\.com\.cn\/(?:business\/client\/card\/detail|member\/client\/detail)(?:\?.*)?$ url script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/master/wentiweilaihui_signin.js
  *
  * [task_local]
- * 5 8 * * * https://raw.githubusercontent.com/d539834401/QxSignUp/main/wentiweilaihui_signin.js, tag=未来荟签到, enabled=true
+ * 5 8 * * * https://raw.githubusercontent.com/d539834401/QxSignUp/master/wentiweilaihui_signin.js, tag=未来荟签到, enabled=true
  *
  * [mitm]
  * hostname = %APPEND% wlhmobile.crland.com.cn

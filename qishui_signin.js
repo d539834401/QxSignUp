@@ -7,10 +7,10 @@
  * 任务重放。
  *
  * [rewrite_local]
- * ^https:\/\/(?:api(?:5-lq)?\.qishui\.com|beta-luna\.douyin\.com)\/luna\/treasure\/.*$ url script-response-body https://raw.githubusercontent.com/d539834401/QxSignUp/main/qishui_signin.js
+ * ^https:\/\/(?:api(?:5-lq)?\.qishui\.com|beta-luna\.douyin\.com)\/luna\/treasure\/.*$ url script-response-body https://raw.githubusercontent.com/d539834401/QxSignUp/master/qishui_signin.js
  *
  * [task_local]
- * 35 7 * * * https://raw.githubusercontent.com/d539834401/QxSignUp/main/qishui_signin.js, tag=汽水音乐签到, enabled=true
+ * 35 7 * * * https://raw.githubusercontent.com/d539834401/QxSignUp/master/qishui_signin.js, tag=汽水音乐签到, enabled=true
  *
  * [mitm]
  * hostname = %APPEND% api.qishui.com api5-lq.qishui.com beta-luna.douyin.com

@@ -413,7 +413,7 @@ test("config: capture pattern agrees with runtime and preserves existing hostnam
   assert.ok(regex.test(capture().url.replace("sign_list", "sign_v4/get_sign_state")));
   assert.ok(!regex.test(capture().url.replace("sign_list", "sign_v3/sign")));
   assert.match(config, /hostname = %APPEND% api\.xiaoheihe\.cn/);
-  assert.match(config, /QxSignUp\/main\/heybox_signin\.js/);
+  assert.match(config, /QxSignUp\/master\/heybox_signin\.js/);
   assert.ok(!config.includes("codex/heybox-quanx-signin"));
   assert.match(config, /20 8 \* \* \*/);
 });

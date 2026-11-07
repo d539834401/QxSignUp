@@ -99,8 +99,8 @@ test("remote configuration matches supported capture URLs and rejects unrelated 
   for (const url of Object.values(URLS)) assert.ok(regex.test(url));
   for (const url of [URLS.today + "?from=sf", PREFIX + "~memberNonactivity~integralTaskStrategyService~queryPointTaskAndSignFromES"]) assert.ok(regex.test(url));
   for (const url of ["http://mcs-mimp-web.sf-express.com/mcs-mimp/ifLogin", URLS.today.replace("sf-express.com", "sf-express.com.evil.invalid"), BASE + "/mcs-mimp/order/create"]) assert.equal(regex.test(url), false);
-  assert.ok(rule.endsWith("script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/main/sfexpress_signin.js"));
-  assert.match(conf, /35 8 \* \* \* https:\/\/raw\.githubusercontent\.com\/d539834401\/QxSignUp\/main\/sfexpress_signin\.js/);
+  assert.ok(rule.endsWith("script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/master/sfexpress_signin.js"));
+  assert.match(conf, /35 8 \* \* \* https:\/\/raw\.githubusercontent\.com\/d539834401\/QxSignUp\/master\/sfexpress_signin\.js/);
 });
 
 test("capture saves actual session and channel without making requests", async () => {

@@ -7,12 +7,12 @@
  * 官方 crypto4mid 库生成与页面相同的请求。
  *
  * [rewrite_local]
- * ^https:\/\/cloud\.huaruntong\.cn\/web\/online\/.*$ url script-response-body https://raw.githubusercontent.com/d539834401/QxSignUp/main/huaruntong_signin.js
- * ^https:\/\/activity\.huaruntong\.cn\/web\/online\/js\/main\.[A-Za-z0-9_-]+\.js$ url script-response-body https://raw.githubusercontent.com/d539834401/QxSignUp/main/huaruntong_signin.js
- * ^https:\/\/(?:cloud|activity)\.huaruntong\.cn\/__qx_hrt_capture(?:\?.*)?$ url script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/main/huaruntong_signin.js
+ * ^https:\/\/cloud\.huaruntong\.cn\/web\/online\/.*$ url script-response-body https://raw.githubusercontent.com/d539834401/QxSignUp/master/huaruntong_signin.js
+ * ^https:\/\/activity\.huaruntong\.cn\/web\/online\/js\/main\.[A-Za-z0-9_-]+\.js$ url script-response-body https://raw.githubusercontent.com/d539834401/QxSignUp/master/huaruntong_signin.js
+ * ^https:\/\/(?:cloud|activity)\.huaruntong\.cn\/__qx_hrt_capture(?:\?.*)?$ url script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/master/huaruntong_signin.js
  *
  * [task_local]
- * 15 7 * * * https://raw.githubusercontent.com/d539834401/QxSignUp/main/huaruntong_signin.js, tag=华润通签到, enabled=true
+ * 15 7 * * * https://raw.githubusercontent.com/d539834401/QxSignUp/master/huaruntong_signin.js, tag=华润通签到, enabled=true
  *
  * [mitm]
  * hostname = %APPEND% mid.huaruntong.cn cloud.huaruntong.cn activity.huaruntong.cn

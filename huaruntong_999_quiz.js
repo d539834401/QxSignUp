@@ -7,10 +7,10 @@
  * 3. 登录凭据只保存在 Quantumult X 本机的 $prefs 中。
  *
  * [rewrite_local]
- * ^https:\/\/api4\.jiankangyouyi\.com\/base-data\/v1\/api\/gadgets\/(?:business-knowledge-challenges|knowledge-challenges\/user-choice)(?:\?[^#]*bizType=160107[^#]*)?$ url script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/main/huaruntong_999_quiz.js
+ * ^https:\/\/api4\.jiankangyouyi\.com\/base-data\/v1\/api\/gadgets\/(?:business-knowledge-challenges|knowledge-challenges\/user-choice)(?:\?[^#]*bizType=160107[^#]*)?$ url script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/master/huaruntong_999_quiz.js
  *
  * [task_local]
- * 25 7 * * * https://raw.githubusercontent.com/d539834401/QxSignUp/main/huaruntong_999_quiz.js, tag=华润通·999答题, enabled=true
+ * 25 7 * * * https://raw.githubusercontent.com/d539834401/QxSignUp/master/huaruntong_999_quiz.js, tag=华润通·999答题, enabled=true
  *
  * [mitm]
  * hostname = %APPEND% api4.jiankangyouyi.com

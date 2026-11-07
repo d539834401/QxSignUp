@@ -31,7 +31,7 @@
 
 采用本仓库单文件抓取/定时双模式，处理顺丰的 **新版签到日历** 和 **普通签到礼包** 两项独立活动。App 或微信“顺丰速运”小程序任选一个抓取，使用实际请求中的 Cookie、User-Agent、platform 和 channel，不需要 Python、青龙、BoxJS 或第三方取码服务。
 
-1. 将 [`sfexpress_signin.conf`](./sfexpress_signin.conf) 的 `[rewrite_local]`、`[task_local]`、`[mitm]` 三段合并到现有 QX 配置，追加 `mcs-mimp-web.sf-express.com`，开启重写与 MitM 并安装、信任证书。配置直接引用本仓库 `main` 的远程脚本。
+1. 将 [`sfexpress_signin.conf`](./sfexpress_signin.conf) 的 `[rewrite_local]`、`[task_local]`、`[mitm]` 三段合并到现有 QX 配置，追加 `mcs-mimp-web.sf-express.com`，开启重写与 MitM 并安装、信任证书。配置直接引用本仓库 `master` 的远程脚本。
 2. 登录顺丰速运 App 或微信“顺丰速运”小程序，进入 **“我的 → 积分 / 签到”** 页面。收到 **“参数获取成功”** 后关闭抓取规则，保留定时任务。抓取只保存参数，不主动请求签到；页面本身可能自动签到。
 3. 在 QX 中手动运行“顺丰速运签到”，随后在顺丰页面核对当天状态。之后每天设备本地时间 **08:35** 执行，脚本的签到日期按北京时间判断。首次抓取若页面已自动签到，需次日先运行任务再打开页面验证。
 
@@ -119,7 +119,7 @@
 
 ## 小黑盒每日签到（iOS / QuanX）
 
-配置中的 Raw 地址使用 `main` 主分支。脚本沿用本仓库的单文件抓取/定时双模式；不需要 Node.js、Docker、BoxJS 或第三方签名服务。
+配置中的 Raw 地址使用 `master` 主分支。脚本沿用本仓库的单文件抓取/定时双模式；不需要 Node.js、Docker、BoxJS 或第三方签名服务。
 
 1. 将 [`heybox_signin.conf`](./heybox_signin.conf) 合并到现有配置，开启重写与 MitM，安装并信任自己的证书。把 `api.xiaoheihe.cn` 追加到现有 hostname 列表，不要覆盖其它域名。
 2. 保持小黑盒 App 已登录，进入 **“我的 → 签到”**，等待“参数获取成功”通知。只需加载页面，抓取脚本不主动签到。只接受包含实际 `device_id`、黑盒 ID、App/系统版本和 `pkey` 的 iOS 请求；不会用虚构设备参数补全不完整请求。

@@ -11,10 +11,10 @@
  * 将以下内容加入 Quantumult X 配置：
  *
  * [rewrite_local]
- * ^https:\/\/api\.kurobbs\.com\/encourage\/signIn\/(?:initSignInV2|v2)(?:\?.*)?$ url script-request-body https://raw.githubusercontent.com/d539834401/QxSignUp/main/kurobbs_wuwa_signin.js
+ * ^https:\/\/api\.kurobbs\.com\/encourage\/signIn\/(?:initSignInV2|v2)(?:\?.*)?$ url script-request-body https://raw.githubusercontent.com/d539834401/QxSignUp/master/kurobbs_wuwa_signin.js
  *
  * [task_local]
- * 8 0 * * * https://raw.githubusercontent.com/d539834401/QxSignUp/main/kurobbs_wuwa_signin.js, tag=库街区·鸣潮签到, enabled=true
+ * 8 0 * * * https://raw.githubusercontent.com/d539834401/QxSignUp/master/kurobbs_wuwa_signin.js, tag=库街区·鸣潮签到, enabled=true
  *
  * [mitm]
  * hostname = %APPEND% api.kurobbs.com

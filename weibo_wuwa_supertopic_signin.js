@@ -14,24 +14,24 @@
  * [MITM]
  * hostname = api.weibo.cn
  * [Script]
- * http-request ^https:\/\/api\.weibo\.cn\/2\/(flowlist|page\/button) tag=微博超话 Cookie, script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js, requires-body=true, img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png
- * cron "0 8 * * *" script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js, tag=微博超话签到, img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png, enable=true
+ * http-request ^https:\/\/api\.weibo\.cn\/2\/(flowlist|page\/button) tag=微博超话 Cookie, script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/master/weibo_wuwa_supertopic_signin.js, requires-body=true, img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png
+ * cron "0 8 * * *" script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/master/weibo_wuwa_supertopic_signin.js, tag=微博超话签到, img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png, enable=true
  *
  * ===== Surge =====
  * [MITM]
  * hostname = api.weibo.cn
  * [Script]
- * 微博超话 Cookie = type=http-request,pattern=^https:\/\/api\.weibo\.cn\/2\/(flowlist|page\/button),requires-body=true,max-size=0,script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js,img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png
- * 微博超话签到 = type=cron,cronexp=0 8 * * *,timeout=60,script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js,img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png
+ * 微博超话 Cookie = type=http-request,pattern=^https:\/\/api\.weibo\.cn\/2\/(flowlist|page\/button),requires-body=true,max-size=0,script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/master/weibo_wuwa_supertopic_signin.js,img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png
+ * 微博超话签到 = type=cron,cronexp=0 8 * * *,timeout=60,script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/master/weibo_wuwa_supertopic_signin.js,img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png
  *
  * ===== Quantumult X =====
  * [MITM]
  * hostname = api.weibo.cn, mapi.weibo.com
  * [rewrite_local]
- * ^https?:\/\/m?api\.weibo\.c(n|om)\/2\/flowlist(?:[\/?].*)?$ url script-request-body https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js
- * ^https?:\/\/m?api\.weibo\.c(n|om)\/2\/page\/button.*active(?:_|%5f)checkin url script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js
+ * ^https?:\/\/m?api\.weibo\.c(n|om)\/2\/flowlist(?:[\/?].*)?$ url script-request-body https://raw.githubusercontent.com/d539834401/QxSignUp/master/weibo_wuwa_supertopic_signin.js
+ * ^https?:\/\/m?api\.weibo\.c(n|om)\/2\/page\/button.*active(?:_|%5f)checkin url script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/master/weibo_wuwa_supertopic_signin.js
  * [task_local]
- * 0 8 * * * https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js, tag=微博超话签到, img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png, enabled=true
+ * 0 8 * * * https://raw.githubusercontent.com/d539834401/QxSignUp/master/weibo_wuwa_supertopic_signin.js, tag=微博超话签到, img-url=https://raw.githubusercontent.com/MaYIHEI/pin/refs/heads/main/app/weibo.png, enabled=true
  *
  * ===== Stash =====
  * cron:
@@ -49,7 +49,7 @@
  *       require-body: true
  * script-providers:
  *   微博超话签到:
- *     url: https://raw.githubusercontent.com/d539834401/QxSignUp/main/weibo_wuwa_supertopic_signin.js
+ *     url: https://raw.githubusercontent.com/d539834401/QxSignUp/master/weibo_wuwa_supertopic_signin.js
  *     interval: 86400
  */
 

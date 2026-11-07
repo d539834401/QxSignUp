@@ -20,8 +20,8 @@ Updated: 2026-09-16
 【Loon 参考配置】：
 *************************
 [Script]
-cron "0 8 8 * * *" script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/main/yaduo_signin.js, timeout=300, tag=亚朵酒店签到
-http-request ^https:\/\/miniapp\.yaduo\.com\/atourlife\/signIn\/signIn.+ script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/main/yaduo_signin.js, timeout=10, tag=亚朵获取请求参数
+cron "0 8 8 * * *" script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/master/yaduo_signin.js, timeout=300, tag=亚朵酒店签到
+http-request ^https:\/\/miniapp\.yaduo\.com\/atourlife\/signIn\/signIn.+ script-path=https://raw.githubusercontent.com/d539834401/QxSignUp/master/yaduo_signin.js, timeout=10, tag=亚朵获取请求参数
 *************************
 
 [MITM]
