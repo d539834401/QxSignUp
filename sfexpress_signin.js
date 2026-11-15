@@ -1,7 +1,7 @@
 /**
  * 顺丰速运 App / 微信小程序每日签到（Quantumult X）
  * Copyright (c) 2026 d539834401
- * Version: 20261105.1
+ * Version: 20261115.1
  *
  * 依据公开协议独立实现，未复制第三方脚本源码：
  * https://github.com/yang7758258/ohhh_QL-Script/tree/74fba0ca5619a4ec074492ceb7a8a7a2ca2facbc
@@ -16,7 +16,7 @@
  */
 
 const SCRIPT_NAME = "顺丰速运签到";
-const SCRIPT_VERSION = "20261105.1";
+const SCRIPT_VERSION = "20261115.1";
 const PROFILE_KEY = "sfexpress_signin_profile_v1";
 const STATUS_KEY = "sfexpress_signin_status_v1";
 const BASE = "https://mcs-mimp-web.sf-express.com";
@@ -102,16 +102,22 @@ function loadAccount() {
 function unchanged(account) { return ($prefs.valueForKey(PROFILE_KEY) || "") === account.snapshot; }
 function guard(account) { if (!unchanged(account)) throw failure("changed", "运行期间登录参数已变化，请使用新参数重新运行。"); }
 
-function rotateCookies(account, response) {
+function rotateCookies(account, response, loginMobile) {
   const fresh = cookieMap(header(response.headers, "set-cookie"), true);
-  if (!Object.keys(fresh).length) return;
+  const keys = Object.keys(fresh);
+  if (!keys.length && loginMobile === undefined) return;
   const current = cookieMap(account.profile.cookie);
+  const mobile = String(loginMobile);
+  if (/^1\d{10}$/.test(mobile) && [current._login_mobile_, fresh._login_mobile_].some(function (value) {
+    return /^1\d{10}$/.test(value || "") && value !== mobile;
+  })) throw failure("changed", "服务端账号与抓取账号不一致，请重新抓取本人登录参数。");
+  if (!keys.length) return;
   const primary = current.sessionId ? "sessionId" : "JSESSIONID";
   if (Object.prototype.hasOwnProperty.call(fresh, primary) && !fresh[primary]) throw failure("auth", "服务端已撤销登录会话，请重新登录并抓取。");
   for (const key of ["_login_user_id_", "_login_mobile_"]) {
     if (fresh[key] && current[key] && fresh[key] !== current[key]) throw failure("changed", "服务端返回不同账号的会话，请重新抓取本人登录参数。");
   }
-  Object.keys(fresh).forEach(function (key) { current[key] = fresh[key]; });
+  keys.forEach(function (key) { current[key] = fresh[key]; });
   const cookie = cookieString(current);
   if (cookie === account.profile.cookie) return;
   if (!validCookie(cookie)) throw failure("auth", "服务端已撤销登录会话，请重新登录并抓取。");
@@ -125,6 +131,14 @@ function rotateCookies(account, response) {
 
 function authError(body) {
   return String(body.errorCode) === "100111" || /用户信息失效|(?:重新|请先)登录|登录.{0,8}(?:过期|失效|超时)/.test(String(body.errorMessage || ""));
+}
+function verifyLogin(obj) {
+  if (!object(obj) || ![0, 1, "0", "1"].includes(obj.loginStatus)) {
+    throw failure("protocol", "顺丰登录接口未返回可识别的状态，请检查脚本版本或反馈此提示。");
+  }
+  if (obj.loginStatus === 0 || obj.loginStatus === "0") {
+    throw failure("auth", "会话尚未登录，请重新打开顺丰积分页抓取。小程序会话若反复失效，可改用顺丰速运 App 抓取并观察次日结果。");
+  }
 }
 function apiHeaders(profile) {
   const time = String(Date.now());
@@ -175,7 +189,8 @@ async function api(account, key, body, duplicateAllowed) {
     return { duplicate: true };
   }
   if (data.success !== true) throw failure("business", "活动接口未确认成功，请在顺丰页面查看原因。");
-  rotateCookies(account, response);
+  if (key === "login") verifyLogin(data.obj);
+  rotateCookies(account, response, key === "login" ? data.obj.mobile : undefined);
   return data;
 }
 
@@ -258,13 +273,7 @@ async function optionalPoints(account) {
 async function runTask() {
   deadline = Date.now() + TASK_MS;
   const date = day(), account = loadAccount();
-  const probe = await api(account, "login", {});
-  if (!object(probe.obj) || String(probe.obj.loginStatus) !== "1") throw failure("auth", "会话尚未登录，请登录顺丰后重新进入积分页抓取。");
-  const cookies = cookieMap(account.profile.cookie);
-  const mobile = probe.obj.mobile;
-  if (/^1\d{10}$/.test(String(mobile)) && /^1\d{10}$/.test(cookies._login_mobile_ || "") && String(mobile) !== cookies._login_mobile_) {
-    throw failure("changed", "服务端账号与抓取账号不一致，请重新抓取本人登录参数。");
-  }
+  await api(account, "login", {});
   const before = await optionalPoints(account);
   const outcomes = {};
   let stopped;

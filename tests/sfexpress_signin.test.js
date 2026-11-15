@@ -221,11 +221,36 @@ test("timed-out ordinary sign is pending and never falls back to calendar sign a
 test("expired session stops before mutation", async () => {
   const r = await execute({ responses: [expired()] }); assert.equal(r.calls.length, 1); assert.match(text(r), /登录状态已过期/);
 });
-test("loginStatus zero stops before mutation", async () => {
-  const r = await execute({ responses: [ok({ loginStatus: 0 })] }); assert.equal(r.calls.length, 1); assert.match(text(r), /尚未登录/);
+test("loginStatus zero stops before signing and leaves saved cookies intact", async () => {
+  const stored = prefs();
+  const anonymous = response({ success: true, obj: { loginStatus: 0 } }, 200, {
+    "Set-Cookie": "sessionId=fixture-new-session; Path=/; HttpOnly"
+  });
+  const r = await execute({ stored, responses: [anonymous] });
+  assert.equal(r.calls.length, 1);
+  assert.equal(r.stored[PROFILE], stored[PROFILE]);
+  assert.equal(r.stored[STATUS], undefined);
+  assert.match(text(r), /尚未登录/);
+});
+test("an unrecognized login status reports a protocol error without changing cookies", async () => {
+  const stored = prefs();
+  const unexpected = response({ success: true, obj: { loginStatus: [1] } }, 200, {
+    "Set-Cookie": "sessionId=fixture-new-session; Path=/"
+  });
+  const r = await execute({ stored, responses: [unexpected] });
+  assert.equal(r.calls.length, 1);
+  assert.equal(r.stored[PROFILE], stored[PROFILE]);
+  assert.match(text(r), /未返回可识别的状态/);
 });
 test("probe account mismatch stops before mutation", async () => {
-  const r = await execute({ responses: [ok({ loginStatus: 1, mobile: "15100000001" })] }); assert.equal(r.calls.length, 1); assert.match(text(r), /账号不一致/);
+  const stored = prefs();
+  const mismatch = response({ success: true, obj: { loginStatus: 1, mobile: "15100000001" } }, 200, {
+    "Set-Cookie": "sessionId=fixture-new-session; Path=/"
+  });
+  const r = await execute({ stored, responses: [mismatch] });
+  assert.equal(r.calls.length, 1);
+  assert.equal(r.stored[PROFILE], stored[PROFILE]);
+  assert.match(text(r), /账号不一致/);
 });
 
 test("auth expiry during calendar verification skips ordinary sign", async () => {
