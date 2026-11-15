@@ -1,7 +1,7 @@
 /**
  * 中国移动 App「签到有礼」（Quantumult X）
  * Copyright (c) 2026 d539834401
- * Version: 20261106.2
+ * Version: 20261115.1
  *
  * 按公开接口资料独立实现（非 Python 源码复制）：
  * https://github.com/mli84/cmcc-auto-checkin/tree/a34f305eeb83b1327444f56fce434276e2c6d98c
@@ -17,7 +17,7 @@
  */
 
 const SCRIPT_NAME = "中国移动签到";
-const SCRIPT_VERSION = "20261106.2";
+const SCRIPT_VERSION = "20261115.1";
 const PROFILE_KEY = "cmcc_signin_profile_v1";
 const STATUS_KEY = "cmcc_signin_status_v1";
 const BASE = "https://wx.10086.cn";
@@ -143,9 +143,11 @@ function capture() {
     if (!phone || !validSso(value, phone)) throw failure("capture", "登录参数不完整，尚未保存；请重新登录中国移动 App 并进入签到页。");
     part = "sso";
   } else if (NATIVE_URL.test(url)) {
+    const body = typeof $request.body === "string" ? $request.body.trim() : "";
+    if (!body) throw failure("capture", "冷启动请求体为空，请确认使用 script-request-body 并重新打开中国移动 App。");
     let plain;
-    try { plain = aesDecrypt(String($request.body || "").trim(), REQ_KEY, REQ_IV); }
-    catch (_) { throw failure("capture", "冷启动请求无法解密，尚未保存；请确认抓取请求体，或检查 App 协议是否已更新。"); }
+    try { plain = aesDecrypt(body, REQ_KEY, REQ_IV); }
+    catch (_) { throw failure("capture", "冷启动请求无法解密，尚未保存。若冷启动时持续出现，请检查 App 协议是否已更新。"); }
     const template = parseObject(plain);
     phone = template && String(template.tel || "");
     value = { url: url, plain: plain, userAgent: userAgent, cookie: cleanHeader(header($request.headers, "cookie")) };
@@ -160,7 +162,7 @@ function capture() {
   if (completeSso(profile)) changed = true;
   // 登录票据变化时丢弃旧活动会话；无身份信息的活动 Cookie 不参与账号合并。
   if (changed) delete profile.session;
-  if (!$prefs.setValueForKey(JSON.stringify(profile), PROFILE_KEY)) throw failure("capture", "本机参数保存失败，请检查 QX 持久化存储后重新抓取。");
+  if (!$prefs.setValueForKey(JSON.stringify(profile), PROFILE_KEY)) throw failure("storage", "本机参数保存失败，请检查 QX 持久化存储后重新抓取。");
   const ready = runnable(profile), nativeReady = validNative(profile.native, phone);
   console.log("[中国移动] 已保存" + (part === "native" ? "冷启动模板" : "签到登录参数") + "；" + (ready ? "可运行任务" : "仍缺少必要字段"));
   if (changed) $notify(SCRIPT_NAME, ready ? nativeReady ? "参数获取完整 ✅" : "登录参数可用 ✅" : "已保存部分参数", ready
@@ -639,6 +641,7 @@ function md5(text) {
     else await runTask();
   } catch (error) {
     // 外部网络/解析错误可能带凭据，输出只使用本脚本生成的固定消息。
-    $notify(SCRIPT_NAME, typeof $request !== "undefined" ? "参数获取未完成" : "任务未完成", error.kind ? error.message : "执行异常，请检查本机参数或反馈脚本版本；原始响应未写入日志。");
+    if (error.kind === "capture") console.log("[中国移动] 已忽略抓取请求：" + error.message);
+    else $notify(SCRIPT_NAME, typeof $request !== "undefined" ? "参数获取未完成" : "任务未完成", error.kind ? error.message : "执行异常，请检查本机参数或反馈脚本版本；原始响应未写入日志。");
   } finally { finish(); }
 })();

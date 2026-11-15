@@ -131,7 +131,7 @@ test("config uses request bodies and matches both supported autoLogin paths", ()
   for (const url of [NATIVE, NATIVE + "?source=cold", NATIVE.replace("uamonekeylogin", "uamrandcodelogin"), SSO, SSO + "&source=app", SSO.replace("?sid=", "?from=app&sid=")]) {
     assert.ok(rules.some(line => new RegExp(line.split(" url ")[0]).test(url)));
   }
-  const scriptUrl = "https://raw.githubusercontent.com/d539834401/QxSignUp/master/cmcc_signin.js?v=20261106.2";
+  const scriptUrl = "https://raw.githubusercontent.com/d539834401/QxSignUp/master/cmcc_signin.js?v=20261115.1";
   assert.ok(rules.every(line => line.endsWith("script-request-body " + scriptUrl)));
   assert.ok(conf.includes("23 8 * * * " + scriptUrl + ", tag=中国移动签到, enabled=true"));
   assert.match(conf, /hostname = %APPEND% client\.app\.coc\.10086\.cn wx\.10086\.cn/);
@@ -172,11 +172,25 @@ for (const [label, request] of [
   ["missing token", { method: "POST", url: SSO, headers: { "User-Agent": UA }, body: JSON.stringify({ ...sso(), token: "" }) }],
   ["bad AES", { method: "POST", url: NATIVE, headers: { "User-Agent": UA }, body: "not-encrypted" }],
   ["incomplete template", { method: "POST", url: NATIVE, headers: { "User-Agent": UA }, body: encrypt(JSON.stringify({ tel: PHONE, xk: "abcdefgh" })) }]
-]) test("invalid capture preserves stored credentials: " + label, async () => {
+]) test("invalid capture is silent and preserves stored credentials: " + label, async () => {
   const stored = prefs({ cached: true });
   const r = await execute({ stored, request });
   assert.equal(r.stored[PROFILE], stored[PROFILE]);
   assert.equal(r.calls.length, 0);
+  assert.equal(r.notices.length, 0);
+});
+
+test("native capture logs empty and undecryptable request bodies without notifying", async () => {
+  for (const [body, diagnostic] of [
+    [undefined, /请求体为空.*script-request-body/],
+    [Buffer.alloc(16).toString("base64"), /请求无法解密/]
+  ]) {
+    const r = await execute({ request: { method: "POST", url: NATIVE, headers: { "User-Agent": UA }, body } });
+    assert.deepEqual(r.stored, {});
+    assert.equal(r.calls.length, 0);
+    assert.equal(r.notices.length, 0);
+    assert.match(r.logs.join("\n"), diagnostic);
+  }
 });
 
 test("capture reports storage failure", async () => {
