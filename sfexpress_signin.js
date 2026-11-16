@@ -1,11 +1,12 @@
 /**
  * 顺丰速运 App / 微信小程序每日签到（Quantumult X）
  * Copyright (c) 2026 d539834401
- * Version: 20261115.1
+ * Version: 20261116.1
  *
  * 依据公开协议独立实现，未复制第三方脚本源码：
  * https://github.com/yang7758258/ohhh_QL-Script/tree/74fba0ca5619a4ec074492ceb7a8a7a2ca2facbc
  * https://github.com/haoyu592/DSbox/tree/6bc18d90cf05c30bb39b4bb638cc443594790474
+ * https://github.com/blusunny/qinglong/blob/30761277dd2c6bf43f83851de5d68b68121dc538/sfsy.py#L144-L164
  * 以及 2026-11-05 顺丰官方 superWelfare 页和前端静态资源。
  *
  * 合并 sfexpress_signin.conf，打开顺丰 App/「顺丰速运」小程序的积分、签到页。
@@ -16,8 +17,9 @@
  */
 
 const SCRIPT_NAME = "顺丰速运签到";
-const SCRIPT_VERSION = "20261115.1";
+const SCRIPT_VERSION = "20261116.1";
 const PROFILE_KEY = "sfexpress_signin_profile_v1";
+const LOGIN_LINK_KEY = "sfexpress_signin_login_link_v1";
 const STATUS_KEY = "sfexpress_signin_status_v1";
 const BASE = "https://mcs-mimp-web.sf-express.com";
 const PREFIX = "/mcs-mimp/commonPost/";
@@ -30,6 +32,9 @@ const ENDPOINTS = {
   points: PREFIX + "~memberIntegral~userInfoService~queryUserInfo"
 };
 const CAPTURE = /^https:\/\/mcs-mimp-web\.sf-express\.com\/mcs-mimp\/(?:ifLogin|commonPost\/~memberNonactivity~(?:integralSignV2Service~(?:getTodaySign|sign)|integralTaskSignPlusService~(?:automaticSignFetchPackage|getUnFetchPointAndDiscount)|integralTaskStrategyService~queryPointTaskAndSignFromES)|commonPost\/~memberIntegral~userInfoService~(?:queryUserInfo|personalInfoNew))(?:\?[^#\s]*)?$/;
+const LOGIN_LINK = /^https:\/\/mcs-mimp-web\.sf-express\.com\/mcs-mimp\/share\/(?:weChat\/shareGiftReceiveRedirect|app\/shareRedirect)\?[^#\\\s\x00-\x1f\x7f]+$/;
+const IDENTITY_COOKIES = ["_login_user_id_", "_login_mobile_"];
+const LOGIN_LINK_RECAPTURE = "请启用抓取规则，重新打开顺丰积分页获取登录链接。";
 const TASK_MS = 45000;
 const REQUEST_MS = 5500;
 let deadline = 0;
@@ -50,10 +55,12 @@ function cookieMap(raw, setCookie) {
   const result = Object.create(null);
   (Array.isArray(raw) ? raw : [raw]).forEach(function (value) {
     String(value || "").split(/,(?=\s*[^=;,\s]+=)/).forEach(function (line) {
-      line.split(";").forEach(function (piece) {
+      const pieces = line.split(";");
+      (setCookie ? pieces.slice(0, 1) : pieces).forEach(function (piece) {
         const match = piece.trim().match(/^([a-z0-9_-]+)=([^;\s,\r\n]*)$/i);
-        if (!match || (setCookie && /^(?:path|domain|expires|max-age|samesite|priority)$/i.test(match[1]))) return;
-        result[match[1]] = match[2];
+        if (match) result[match[1]] = setCookie && pieces.slice(1).some(function (attr) {
+          return /^\s*max-age\s*=\s*(?:0|-\d+)\s*$/i.test(attr);
+        }) ? "" : match[2];
       });
     });
   });
@@ -73,7 +80,15 @@ function validProfile(profile) {
 }
 
 function capture() {
-  if (!CAPTURE.test(String($request.url || "")) || String($request.method || "GET").toUpperCase() === "OPTIONS") return;
+  const url = String($request.url || "");
+  const method = String($request.method || "GET").toUpperCase();
+  if (method === "GET" && LOGIN_LINK.test(url)) {
+    if ($prefs.valueForKey(LOGIN_LINK_KEY) === url) return;
+    if (!$prefs.setValueForKey(url, LOGIN_LINK_KEY)) throw failure("storage", "登录链接保存失败，请检查 QX 存储后重新抓取。");
+    $notify(SCRIPT_NAME, "登录链接获取成功 ✅", "已保存到本机。首次配置请等到参数获取成功后再关闭抓取规则。");
+    return;
+  }
+  if (!CAPTURE.test(url) || method === "OPTIONS") return;
   const cookie = cleanHeader(header($request.headers, "cookie"));
   const userAgent = cleanHeader(header($request.headers, "user-agent"));
   if (!validCookie(cookie) || !userAgent) {
@@ -90,7 +105,9 @@ function capture() {
   const old = parseObject($prefs.valueForKey(PROFILE_KEY));
   if (JSON.stringify(old) === JSON.stringify(profile)) return;
   if (!$prefs.setValueForKey(JSON.stringify(profile), PROFILE_KEY)) throw failure("storage", "本机凭据保存失败，请检查 QX 存储后重新抓取。");
-  $notify(SCRIPT_NAME, "参数获取成功 ✅", "已保存到本机，请关闭抓取规则，再手动运行顺丰签到任务。");
+  const hint = LOGIN_LINK.test($prefs.valueForKey(LOGIN_LINK_KEY) || "") ? "请关闭抓取规则，再手动运行顺丰签到任务。" :
+    "已保存 Cookie。收到登录链接获取成功后关闭抓取规则，再手动运行签到。";
+  $notify(SCRIPT_NAME, "参数获取成功 ✅", hint);
 }
 
 function loadAccount() {
@@ -99,25 +116,39 @@ function loadAccount() {
   if (!validProfile(profile)) throw failure("config", "请开启抓取规则，登录顺丰 App 或「顺丰速运」小程序后进入积分、签到页。");
   return { profile: profile, snapshot: raw };
 }
-function unchanged(account) { return ($prefs.valueForKey(PROFILE_KEY) || "") === account.snapshot; }
+function unchanged(account) {
+  return ($prefs.valueForKey(PROFILE_KEY) || "") === account.snapshot &&
+    (account.loginLink === undefined || $prefs.valueForKey(LOGIN_LINK_KEY) === account.loginLink);
+}
 function guard(account) { if (!unchanged(account)) throw failure("changed", "运行期间登录参数已变化，请使用新参数重新运行。"); }
 
-function rotateCookies(account, response, loginMobile) {
+function confirmRenewedAccount(previous, current, mobile) {
+  const verified = Object.assign({}, current, { _login_mobile_: mobile || current._login_mobile_ });
+  if (IDENTITY_COOKIES.some(function (key) { return previous[key] && verified[key] && previous[key] !== verified[key]; })) {
+    throw failure("changed", "登录链接返回不同账号的会话，请重新抓取本人参数。");
+  }
+  if (!IDENTITY_COOKIES.some(function (key) { return previous[key] && previous[key] === verified[key]; })) {
+    throw failure("auth", "无法确认登录链接与已保存账号一致，请重新抓取顺丰登录参数。");
+  }
+  if (mobile && !current._login_mobile_) current._login_mobile_ = mobile;
+}
+
+function rotateCookies(account, response, loginMobile, renewedCookie) {
   const fresh = cookieMap(header(response.headers, "set-cookie"), true);
   const keys = Object.keys(fresh);
-  if (!keys.length && loginMobile === undefined) return;
-  const current = cookieMap(account.profile.cookie);
-  const mobile = String(loginMobile);
-  if (/^1\d{10}$/.test(mobile) && [current._login_mobile_, fresh._login_mobile_].some(function (value) {
+  if (!keys.length && loginMobile === undefined && !renewedCookie) return;
+  const current = cookieMap(renewedCookie || account.profile.cookie);
+  const mobile = /^1\d{10}$/.test(String(loginMobile)) ? String(loginMobile) : "";
+  if (mobile && [current._login_mobile_, fresh._login_mobile_].some(function (value) {
     return /^1\d{10}$/.test(value || "") && value !== mobile;
   })) throw failure("changed", "服务端账号与抓取账号不一致，请重新抓取本人登录参数。");
-  if (!keys.length) return;
   const primary = current.sessionId ? "sessionId" : "JSESSIONID";
   if (Object.prototype.hasOwnProperty.call(fresh, primary) && !fresh[primary]) throw failure("auth", "服务端已撤销登录会话，请重新登录并抓取。");
-  for (const key of ["_login_user_id_", "_login_mobile_"]) {
+  for (const key of IDENTITY_COOKIES) {
     if (fresh[key] && current[key] && fresh[key] !== current[key]) throw failure("changed", "服务端返回不同账号的会话，请重新抓取本人登录参数。");
   }
   keys.forEach(function (key) { current[key] = fresh[key]; });
+  if (renewedCookie) confirmRenewedAccount(cookieMap(account.profile.cookie), current, mobile);
   const cookie = cookieString(current);
   if (cookie === account.profile.cookie) return;
   if (!validCookie(cookie)) throw failure("auth", "服务端已撤销登录会话，请重新登录并抓取。");
@@ -133,16 +164,15 @@ function authError(body) {
   return String(body.errorCode) === "100111" || /用户信息失效|(?:重新|请先)登录|登录.{0,8}(?:过期|失效|超时)/.test(String(body.errorMessage || ""));
 }
 function verifyLogin(obj) {
-  if (!object(obj) || ![0, 1, "0", "1"].includes(obj.loginStatus)) {
-    throw failure("protocol", "顺丰登录接口未返回可识别的状态，请检查脚本版本或反馈此提示。");
+  const status = object(obj) ? obj.loginStatus : null;
+  if ([-1, 0, "-1", "0"].includes(status)) {
+    throw failure("auth", "会话尚未登录，" + LOGIN_LINK_RECAPTURE);
   }
-  if (obj.loginStatus === 0 || obj.loginStatus === "0") {
-    throw failure("auth", "会话尚未登录，请重新打开顺丰积分页抓取。小程序会话若反复失效，可改用顺丰速运 App 抓取并观察次日结果。");
-  }
+  if (status !== 1 && status !== "1") throw failure("protocol", "顺丰登录接口未返回可识别的状态，请检查脚本版本或反馈此提示。");
 }
-function apiHeaders(profile) {
+function apiHeaders(profile, cookie) {
   const time = String(Date.now());
-  const h = { Cookie: profile.cookie, "User-Agent": profile.userAgent, Accept: "application/json, text/plain, */*", "Content-Type": "application/json",
+  const h = { Cookie: cookie || profile.cookie, "User-Agent": profile.userAgent, Accept: "application/json, text/plain, */*", "Content-Type": "application/json",
     syscode: "MCS-MIMP-CORE", timestamp: time,
     signature: md5("token=wwesldfs29aniversaryvdld29&timestamp=" + time + "&sysCode=MCS-MIMP-CORE"),
     channel: profile.channel, platform: profile.platform, Origin: BASE, Referer: BASE + "/up-member/newPoints" };
@@ -170,10 +200,10 @@ function fetchResponse(options) {
     });
   });
 }
-async function api(account, key, body, duplicateAllowed) {
+async function api(account, key, body, { duplicateAllowed, renewedCookie } = {}) {
   guard(account);
   if (!Object.prototype.hasOwnProperty.call(ENDPOINTS, key)) throw failure("protocol", "未知接口，任务未继续执行。");
-  const response = await fetchResponse({ url: BASE + ENDPOINTS[key], method: "POST", headers: apiHeaders(account.profile),
+  const response = await fetchResponse({ url: BASE + ENDPOINTS[key], method: "POST", headers: apiHeaders(account.profile, renewedCookie),
     body: JSON.stringify(body || {}), opts: { redirection: false, "auto-cookie": false } });
   const status = Number(response && response.statusCode);
   if (status === 401) throw failure("auth", "登录状态已过期，请重新打开顺丰积分页抓取会话。");
@@ -190,8 +220,53 @@ async function api(account, key, body, duplicateAllowed) {
   }
   if (data.success !== true) throw failure("business", "活动接口未确认成功，请在顺丰页面查看原因。");
   if (key === "login") verifyLogin(data.obj);
-  rotateCookies(account, response, key === "login" ? data.obj.mobile : undefined);
+  rotateCookies(account, response, key === "login" ? data.obj.mobile : undefined, renewedCookie);
   return data;
+}
+
+function sameHostRedirect(location) {
+  if (typeof location !== "string" || /[\\\s\x00-\x1f\x7f]/.test(location)) return "";
+  const local = location.startsWith(BASE + "/") ? location.slice(BASE.length) : location;
+  return /^\/(?!\/)/.test(local) ? BASE + local.split("#")[0] : "";
+}
+
+async function exchangeLoginLink(account) {
+  const cookies = Object.create(null);
+  const visited = new Set();
+  let url = account.loginLink;
+  for (let hop = 0; url && hop < 3 && !visited.has(url); hop += 1) {
+    guard(account);
+    visited.add(url);
+    const headers = { "User-Agent": account.profile.userAgent, Accept: "text/html,application/xhtml+xml,*/*" };
+    const current = cookieString(cookies);
+    if (current) headers.Cookie = current;
+    const response = await fetchResponse({ url: url, method: "GET", headers: headers, opts: { redirection: false, "auto-cookie": false } });
+    const status = Number(response && response.statusCode);
+    const redirects = [301, 302, 303, 307, 308].includes(status);
+    if (status === 429) throw failure("limited", "顺丰登录入口限流，请稍后手动运行。");
+    if (status >= 500) throw failure("server", "顺丰登录入口暂不可用，请稍后重试。");
+    if (!redirects && !(status >= 200 && status < 300)) break;
+    Object.assign(cookies, cookieMap(header(response.headers, "set-cookie"), true));
+    url = redirects ? sameHostRedirect(header(response.headers, "location")) : "";
+    const cookie = cookieString(cookies);
+    if (validCookie(cookie) && (!url || cookies._login_user_id_ || cookies._login_mobile_)) return cookie;
+  }
+  throw failure("auth", "登录链接未返回有效会话。" + LOGIN_LINK_RECAPTURE);
+}
+
+async function ensureLogin(account) {
+  try {
+    await api(account, "login", {});
+    return;
+  } catch (error) {
+    if (error.kind !== "auth") throw error;
+    const link = $prefs.valueForKey(LOGIN_LINK_KEY);
+    if (!LOGIN_LINK.test(link || "")) throw error;
+    account.loginLink = link;
+  }
+  const cookie = await exchangeLoginLink(account);
+  await api(account, "login", {}, { renewedCookie: cookie });
+  console.log("[顺丰] 登录链接换取会话已验证");
 }
 
 function integer(value) { return /^(?:0|[1-9]\d{0,9})$/.test(String(value)) ? Number(value) : null; }
@@ -216,7 +291,7 @@ async function calendarSign(account, date) {
   if (before.signed) return result("already", "今日已签到" + countText(before.days, "连续"));
   beforeWrite(account, date, REQUEST_MS + 1500);
   let submitError;
-  try { await api(account, "sign", {}, true); }
+  try { await api(account, "sign", {}, { duplicateAllowed: true }); }
   catch (error) { if (stopError(error)) throw error; submitError = error; }
   let after;
   try { after = await todayStatus(account); }
@@ -273,7 +348,7 @@ async function optionalPoints(account) {
 async function runTask() {
   deadline = Date.now() + TASK_MS;
   const date = day(), account = loadAccount();
-  await api(account, "login", {});
+  await ensureLogin(account);
   const before = await optionalPoints(account);
   const outcomes = {};
   let stopped;

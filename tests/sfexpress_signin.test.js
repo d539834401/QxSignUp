@@ -7,7 +7,7 @@ const vm = require("node:vm");
 
 const source = fs.readFileSync(path.join(__dirname, "../sfexpress_signin.js"), "utf8");
 const conf = fs.readFileSync(path.join(__dirname, "../sfexpress_signin.conf"), "utf8");
-const PROFILE = "sfexpress_signin_profile_v1", STATUS = "sfexpress_signin_status_v1";
+const PROFILE = "sfexpress_signin_profile_v1", STATUS = "sfexpress_signin_status_v1", LOGIN_LINK = "sfexpress_signin_login_link_v1";
 const BASE = "https://mcs-mimp-web.sf-express.com";
 const PREFIX = BASE + "/mcs-mimp/commonPost/";
 const URLS = {
@@ -22,6 +22,9 @@ const TIME = Date.parse("2026-11-05T00:35:00Z");
 const PHONE = "15100000000"; // 合成数据，不使用真实账号。
 const COOKIE = "sessionId=fixture-session-private; JSESSIONID=fixture-jsession-private; _login_user_id_=fixture-user-private; _login_mobile_=" + PHONE;
 const UA = "Mozilla/5.0 iPhone MicroMessenger/8.0 fixture-mini-program";
+const LINK = BASE + "/mcs-mimp/share/weChat/shareGiftReceiveRedirect?sk=fixture-link-private&target=%2Fup-member%2FnewPoints";
+const APP_LINK = BASE + "/mcs-mimp/share/app/shareRedirect?sk=fixture-link-private";
+const LANDING = BASE + "/up-member/newPoints?from=mypoint";
 function profile(extra = {}) { return { version: 1, cookie: COOKIE, userAgent: UA, platform: "MINI_PROGRAM", channel: "mypoint", ...extra }; }
 function prefs(extra = {}) { return { [PROFILE]: JSON.stringify(profile()), ...extra }; }
 function response(body, statusCode = 200, headers = {}) { return { statusCode, headers, body: typeof body === "string" ? body : JSON.stringify(body) }; }
@@ -69,13 +72,18 @@ async function execute({ stored: initial = prefs(), request, responses = [], wri
     if (unexpected) throw unexpected;
     assert.equal(doneCount, 1);
     const output = JSON.stringify({ notices, logs });
-    for (const secret of [PHONE, "fixture-session-private", "fixture-jsession-private", "fixture-user-private", "fixture-new-session", "fixture-other-user", "fixture-access-secret"]) {
+    for (const secret of [PHONE, "fixture-session-private", "fixture-jsession-private", "fixture-user-private", "fixture-new-session", "fixture-other-user", "fixture-access-secret", "fixture-link-private"]) {
       assert.ok(!output.includes(secret), "Credentials leaked to output");
     }
     for (const options of calls) {
-      assert.ok(Object.values(URLS).includes(options.url));
       assert.equal(options.opts.redirection, false);
       assert.equal(options.opts["auto-cookie"], false);
+      if ([LINK, APP_LINK, LANDING].includes(options.url)) {
+        assert.equal(options.method, "GET");
+        assert.equal(options.headers.signature, undefined);
+        continue;
+      }
+      assert.ok(Object.values(URLS).includes(options.url));
       assert.equal(options.method, "POST");
       assert.equal(options.headers.signature, crypto.createHash("md5").update("token=wwesldfs29aniversaryvdld29&timestamp=" + options.headers.timestamp + "&sysCode=MCS-MIMP-CORE").digest("hex"));
     }
@@ -94,13 +102,18 @@ test("MD5 matches node:crypto, including Unicode and block boundaries", async ()
 });
 
 test("remote configuration matches supported capture URLs and rejects unrelated paths", () => {
-  const rule = conf.split("\n").find(line => line.startsWith("^"));
-  const regex = new RegExp(rule.split(" url ")[0]);
-  for (const url of Object.values(URLS)) assert.ok(regex.test(url));
-  for (const url of [URLS.today + "?from=sf", PREFIX + "~memberNonactivity~integralTaskStrategyService~queryPointTaskAndSignFromES"]) assert.ok(regex.test(url));
-  for (const url of ["http://mcs-mimp-web.sf-express.com/mcs-mimp/ifLogin", URLS.today.replace("sf-express.com", "sf-express.com.evil.invalid"), BASE + "/mcs-mimp/order/create"]) assert.equal(regex.test(url), false);
-  assert.ok(rule.endsWith("script-request-header https://raw.githubusercontent.com/d539834401/QxSignUp/master/sfexpress_signin.js"));
-  assert.match(conf, /35 8 \* \* \* https:\/\/raw\.githubusercontent\.com\/d539834401\/QxSignUp\/master\/sfexpress_signin\.js/);
+  const rules = conf.split("\n").filter(line => line.startsWith("^"));
+  const patterns = rules.map(rule => new RegExp(rule.split(" url ")[0]));
+  for (const url of [...Object.values(URLS), URLS.today + "?from=sf", PREFIX + "~memberNonactivity~integralTaskStrategyService~queryPointTaskAndSignFromES", LINK, APP_LINK]) {
+    assert.equal(patterns.filter(pattern => pattern.test(url)).length, 1);
+  }
+  for (const url of ["http://mcs-mimp-web.sf-express.com/mcs-mimp/ifLogin", LINK.replace("sf-express.com", "sf-express.com.evil.invalid"), LINK.split("?")[0], BASE + "/mcs-mimp/order/create"]) {
+    assert.ok(!patterns.some(pattern => pattern.test(url)));
+  }
+  const version = source.match(/const SCRIPT_VERSION = "([^"]+)"/)[1];
+  const script = "https://raw.githubusercontent.com/d539834401/QxSignUp/master/sfexpress_signin.js?v=" + version;
+  assert.ok(rules.every(rule => rule.endsWith("script-request-header " + script)));
+  assert.ok(conf.includes("35 8 * * * " + script + ", tag=顺丰速运签到"));
 });
 
 test("capture saves actual session and channel without making requests", async () => {
@@ -115,6 +128,30 @@ test("App capture keeps SFAPP platform, channel and real device ID", async () =>
   const r = await execute({ stored: {}, request: captureRequest({ headers: { cookie: COOKIE, "user-agent": "SFMainland/iOS fixture", platform: "SFAPP", channel: "appqiandao", deviceid: "fixture-device-123" } }) });
   const p = JSON.parse(r.stored[PROFILE]);
   assert.equal(p.platform, "SFAPP"); assert.equal(p.channel, "appqiandao"); assert.equal(p.deviceId, "fixture-device-123");
+});
+
+test("the login link is captured before any Cookie and survives profile capture", async () => {
+  const first = await execute({ stored: {}, request: { method: "GET", url: LINK, headers: {} } });
+  assert.equal(first.stored[LOGIN_LINK], LINK);
+  assert.equal(first.stored[PROFILE], undefined);
+  assert.equal(first.calls.length, 0);
+  assert.match(text(first), /登录链接获取成功/);
+  const next = await execute({ stored: first.stored, request: captureRequest() });
+  assert.equal(next.stored[LOGIN_LINK], LINK);
+  assert.equal(JSON.parse(next.stored[PROFILE]).cookie, COOKIE);
+  const repeated = await execute({ stored: next.stored, request: { method: "GET", url: LINK } });
+  assert.equal(repeated.notices.length, 0);
+});
+
+test("an App login link is accepted only as a complete GET URL", async () => {
+  const stored = prefs({ [LOGIN_LINK]: LINK });
+  for (const [method, url] of [["POST", APP_LINK], ["GET", APP_LINK.split("?")[0]], ["GET", APP_LINK.replace("https:", "http:")]]) {
+    const rejected = await execute({ stored, request: { method, url } });
+    assert.equal(rejected.stored[LOGIN_LINK], LINK);
+    assert.equal(rejected.notices.length, 0);
+  }
+  const captured = await execute({ stored, request: { method: "GET", url: APP_LINK } });
+  assert.equal(captured.stored[LOGIN_LINK], APP_LINK);
 });
 
 test("JSESSIONID-only capture is accepted and unchanged capture is quiet", async () => {
@@ -233,7 +270,7 @@ test("loginStatus zero stops before signing and leaves saved cookies intact", as
   assert.match(text(r), /尚未登录/);
 });
 test("an unrecognized login status reports a protocol error without changing cookies", async () => {
-  const stored = prefs();
+  const stored = prefs({ [LOGIN_LINK]: LINK });
   const unexpected = response({ success: true, obj: { loginStatus: [1] } }, 200, {
     "Set-Cookie": "sessionId=fixture-new-session; Path=/"
   });
@@ -241,6 +278,105 @@ test("an unrecognized login status reports a protocol error without changing coo
   assert.equal(r.calls.length, 1);
   assert.equal(r.stored[PROFILE], stored[PROFILE]);
   assert.match(text(r), /未返回可识别的状态/);
+});
+
+test("loginStatus -1 is reported as logged out for a legacy profile", async () => {
+  for (const loginStatus of [-1, "-1"]) {
+    const r = await execute({ responses: [ok({ loginStatus })] });
+    assert.deepEqual(r.calls.map(call => call.url), [URLS.login]);
+    assert.match(text(r), /会话尚未登录/);
+  }
+});
+
+test("a valid saved Cookie does not use the login link", async () => {
+  const stored = prefs({ [LOGIN_LINK]: LINK });
+  const r = await execute({ stored, responses: [loggedIn(), points(), today(true), ordinary(1), points()] });
+  assert.deepEqual(r.calls.map(call => call.url), [URLS.login, URLS.points, URLS.today, URLS.ordinary, URLS.points]);
+  assert.equal(r.stored[PROFILE], stored[PROFILE]);
+});
+
+test("an expired Cookie is refreshed across a same-host redirect and verified before signing", async () => {
+  const stored = prefs({ [LOGIN_LINK]: LINK });
+  const renewed = "sessionId=fixture-new-session; _login_user_id_=fixture-user-private";
+  const r = await execute({ stored, responses: [
+    ok({ loginStatus: -1 }),
+    response("", 302, { Location: "/up-member/newPoints?from=mypoint", "Set-Cookie": "sessionId=fixture-new-session; Path=/; HttpOnly" }),
+    response("", 200, { "Set-Cookie": "_login_user_id_=fixture-user-private; Path=/" }),
+    (options, controls) => {
+      assert.equal(options.headers.Cookie, renewed);
+      assert.equal(controls.stored[PROFILE], stored[PROFILE]);
+      return loggedIn();
+    },
+    points(), today(false), ok({}), today(true), ordinary(0), points()
+  ] });
+  assert.deepEqual(r.calls.map(call => call.url), [URLS.login, LINK, LANDING, URLS.login, URLS.points, URLS.today, URLS.sign, URLS.today, URLS.ordinary, URLS.points]);
+  assert.equal(r.calls[1].headers.Cookie, undefined);
+  assert.equal(r.calls[2].headers.Cookie, "sessionId=fixture-new-session");
+  const saved = JSON.parse(r.stored[PROFILE]).cookie;
+  assert.equal(saved, renewed + "; _login_mobile_=" + PHONE);
+  assert.equal(r.calls[6].headers.Cookie, saved);
+  assert.equal(state(r).calendar, "signed");
+  assert.equal(state(r).ordinary, "signed");
+  assert.match(r.logs.join("\n"), /登录链接换取会话已验证/);
+});
+
+test("an App sign-in can verify a session from the redirect response itself", async () => {
+  const stored = prefs({ [PROFILE]: JSON.stringify(profile({ platform: "SFAPP", channel: "appqiandao" })), [LOGIN_LINK]: APP_LINK });
+  const r = await execute({ stored, responses: [
+    expired(),
+    response("", 302, { Location: LANDING, "Set-Cookie": ["sessionId=fixture-new-session; Path=/", "_login_user_id_=fixture-user-private; Path=/"] }),
+    loggedIn(), points(), today(true), ordinary(1), points()
+  ] });
+  assert.deepEqual(r.calls.map(call => call.url), [URLS.login, APP_LINK, URLS.login, URLS.points, URLS.today, URLS.ordinary, URLS.points]);
+  assert.equal(JSON.parse(r.calls[5].body).channelFrom, "SFAPP");
+});
+
+for (const [label, location] of [
+  ["external", "https://example.invalid/path"],
+  ["protocol relative", "//example.invalid/path"],
+  ["scheme masquerade", "/\\example.invalid/path"],
+  ["loop", LINK]
+]) test("the exchange stops for an unsafe or repeated redirect: " + label, async () => {
+  const stored = prefs({ [LOGIN_LINK]: LINK });
+  const r = await execute({ stored, responses: [expired(), response("", 302, { Location: location, "Set-Cookie": "HWWAFSESTIME=fixture; Path=/" })] });
+  assert.deepEqual(r.calls.map(call => call.url), [URLS.login, LINK]);
+  assert.equal(r.stored[PROFILE], stored[PROFILE]);
+  assert.match(text(r), /登录链接未返回有效会话/);
+});
+
+test("an edited login link on a different host is never sent", async () => {
+  const stored = prefs({ [LOGIN_LINK]: LINK.replace("sf-express.com", "sf-express.com.example.invalid") });
+  const r = await execute({ stored, responses: [expired()] });
+  assert.deepEqual(r.calls.map(call => call.url), [URLS.login]);
+  assert.equal(r.stored[PROFILE], stored[PROFILE]);
+});
+
+for (const [label, sessionCookie, login, notice] of [
+  ["different account", "sessionId=fixture-new-session; Path=/, _login_user_id_=fixture-other-user; Path=/", loggedIn(), /不同账号/],
+  ["unknown identity", "sessionId=fixture-new-session; Path=/", ok({ loginStatus: 1 }), /无法确认/],
+  ["still logged out", "sessionId=fixture-new-session; Path=/", ok({ loginStatus: -1 }), /尚未登录/]
+]) test("the renewed Cookie is discarded when it cannot be verified: " + label, async () => {
+  const stored = prefs({ [LOGIN_LINK]: LINK });
+  const r = await execute({ stored, responses: [expired(), response("", 200, { "Set-Cookie": sessionCookie }), login] });
+  assert.deepEqual(r.calls.map(call => call.url), [URLS.login, LINK, URLS.login]);
+  assert.equal(r.stored[PROFILE], stored[PROFILE]);
+  assert.equal(r.stored[STATUS], undefined);
+  assert.match(text(r), notice);
+});
+
+test("a concurrent link capture cancels the old exchange before it can verify or save", async () => {
+  const stored = prefs({ [LOGIN_LINK]: LINK });
+  const r = await execute({ stored, responses: [
+    expired(),
+    (_options, controls) => {
+      controls.stored[LOGIN_LINK] = APP_LINK;
+      return response("", 200, { "Set-Cookie": "sessionId=fixture-new-session; Path=/" });
+    }
+  ] });
+  assert.deepEqual(r.calls.map(call => call.url), [URLS.login, LINK]);
+  assert.equal(r.stored[PROFILE], stored[PROFILE]);
+  assert.equal(r.stored[LOGIN_LINK], APP_LINK);
+  assert.match(text(r), /参数已变化/);
 });
 test("probe account mismatch stops before mutation", async () => {
   const stored = prefs();
