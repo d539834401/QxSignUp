@@ -8,6 +8,7 @@
  */
 
 const NAME = "TapTap 鸣潮签到";
+const VERSION = "20261117.1";
 const STORE_KEY = "codex_taptap_mingchao_request_v1";
 const DEFAULT_EVENT_URL = "https://www.taptap.cn/events/game-sign/frndkdpd";
 
@@ -15,7 +16,7 @@ if (typeof $request !== "undefined") {
   captureRequest();
 } else {
   runTask()
-    .catch((error) => notify("执行失败", error.message || String(error)))
+    .catch((error) => notify("执行失败", errorText(error)))
     .finally(() => $done());
 }
 
@@ -35,12 +36,13 @@ function captureRequest() {
     const ok = $prefs.setValueForKey(JSON.stringify(saved), STORE_KEY);
     notify(ok ? "凭据获取成功" : "凭据保存失败", `活动代码：${saved.activityCode}`);
   } catch (error) {
-    notify("凭据获取失败", error.message || String(error));
+    notify("凭据获取失败", errorText(error));
   }
   $done({});
 }
 
 async function runTask() {
+  console.log(`[${NAME}] v${VERSION}`);
   const raw = $prefs.valueForKey(STORE_KEY);
   if (!raw) {
     notify("尚未获取凭据", "请先按 README 打开一次 TapTap 签到活动页。", DEFAULT_EVENT_URL);
@@ -76,33 +78,41 @@ async function runTask() {
   if (smfp) signBody += `&smfp=${encodeURIComponent(smfp)}`;
 
   let signMessage = "";
+  let signAccepted = false;
   try {
     const response = await fetchRequest({
       url: `${base}/check_in${query}`,
       method: "POST",
       headers,
       body: signBody,
-    });
+    }, "签到");
     const result = unwrap(response.body);
+    signAccepted = result.ok;
     signMessage = result.ok
       ? "签到成功"
       : result.message || `签到返回 HTTP ${response.statusCode}`;
   } catch (error) {
-    signMessage = `签到请求失败：${error.message || error}`;
+    signMessage = errorText(error);
   }
 
-  const dynamicResponse = await fetchRequest({
-    url: saved.dynamicUrl,
-    method: "GET",
-    headers: cleanHeaders(headers),
-  });
-  const dynamicResult = unwrap(dynamicResponse.body);
-  if (!dynamicResult.ok) {
-    throw new Error(dynamicResult.message || "读取签到状态失败，可能需要重新获取凭据");
+  let daily;
+  try {
+    const dynamicResponse = await fetchRequest({
+      url: saved.dynamicUrl,
+      method: "GET",
+      headers: cleanHeaders(headers),
+    }, "读取签到状态", 1);
+    const dynamicResult = unwrap(dynamicResponse.body);
+    if (!dynamicResult.ok) {
+      throw new Error(`读取签到状态失败：${dynamicResult.message || "可能需要重新获取凭据"}`);
+    }
+    daily = dynamicResult.data && dynamicResult.data.daily_check_in;
+    if (!daily) throw new Error("签到状态响应缺少 daily_check_in");
+  } catch (error) {
+    notify(signAccepted ? "签到已提交，状态待确认" : "签到结果待确认",
+      `${signMessage}\n${errorText(error)}\n请稍后手动运行任务或打开活动页核对；本次未领取礼包。`, DEFAULT_EVENT_URL);
+    return;
   }
-
-  const daily = dynamicResult.data && dynamicResult.data.daily_check_in;
-  if (!daily) throw new Error("签到状态响应缺少 daily_check_in");
 
   const days = Number(
     daily.check_in_log && daily.check_in_log.total_check_in_days
@@ -123,7 +133,7 @@ async function runTask() {
         method: "POST",
         headers,
         body,
-      });
+      }, "领取礼包");
       const result = unwrap(response.body);
       if (!result.ok) {
         claimFailed.push(`${award.content || award.label || award.award_id}：${result.message || "领取失败"}`);
@@ -139,7 +149,7 @@ async function runTask() {
       const code = prize.code || prize.sn || "";
       claimed.push(code ? `${title}｜兑换码 ${code}` : title);
     } catch (error) {
-      claimFailed.push(`${award.content || award.label || award.award_id}：${error.message || error}`);
+      claimFailed.push(`${award.content || award.label || award.award_id}：${errorText(error)}`);
     }
   }
 
@@ -208,8 +218,41 @@ function unwrap(body) {
   };
 }
 
-function fetchRequest(options) {
-  return $task.fetch(options);
+function errorText(error) {
+  let message = "";
+  if (typeof error === "string") message = error;
+  else if (error && typeof error === "object") {
+    // QX 的 fetch 拒绝原因是 { error: "…" }，不一定是带 message 的 Error。
+    message = [error.message, error.error, error.errorDescription, error.localizedDescription]
+      .find((value) => typeof value === "string" && value.trim()) || "";
+  }
+  if (!message || message === "[object Object]") message = "未知错误（未返回错误描述）";
+  const code = error && (error.errorCode !== undefined ? error.errorCode : error.code);
+  if (code !== undefined && /^-?\d+$/.test(String(code))) message += `（错误码 ${code}）`;
+  // 不展开整个错误对象；系统错误中附带的 URL/鉴权字段也不写入通知或日志。
+  return message.replace(/https?:\/\/[^\s<>"']+/gi, "[请求地址已隐藏]")
+    .replace(/\b(cookie|authorization)\s*[:=][^\r\n]*/gi, "$1=[已隐藏]")
+    .replace(/\b([\w-]*(?:token|secret|session|sign|smfp)[\w-]*)\s*=\s*[^\s&,;]+/gi, "$1=[已隐藏]")
+    .slice(0, 400);
+}
+
+async function fetchRequest(options, stage, retries = 0) {
+  // 只重试读取状态；签到和礼包领取在超时后都可能已生效，不能重发。
+  const maxRetries = options.method === "GET" ? Math.min(retries, 1) : 0;
+  for (let attempt = 0; ; attempt++) {
+    const started = Date.now();
+    try {
+      const response = await $task.fetch(options);
+      console.log(`[${NAME}] ${stage}：HTTP ${response.statusCode}，耗时 ${Date.now() - started}ms`);
+      return response;
+    } catch (error) {
+      const message = `${stage}请求失败：${errorText(error)}`;
+      console.log(`[${NAME}] ${message}，耗时 ${Date.now() - started}ms`);
+      if (attempt >= maxRetries) throw new Error(message);
+      console.log(`[${NAME}] ${stage}：1 秒后重试一次`);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
 }
 
 function notify(subtitle, body, url) {
